@@ -6,16 +6,6 @@ export StrongModuleTree, strong_modules,
     symgraph_factorizing_permutation,
     tournament_factorizing_permutation
 
-## References:
-#
-#  McConnell & Montgolfier 2004:
-#    "Linear-time modular decomposition of directed graphs"
-#  Capelle, Habib & de Montgolfier 2002:
-#    "Graph decompositions and factorizing permutations"
-#  Habib, Paul & Viennot 1999:
-#    "Partition refinement techniques: an interesting algorithmic tool kit"
-#
-
 using LinearAlgebra
 using LinearAlgebra: checksquare
 using SparseArrays
