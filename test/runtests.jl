@@ -1,6 +1,7 @@
 using GraphModularDecomposition
 using LinearAlgebra
 using Random
+using SparseArrays
 using Test
 
 include("testutils.jl")
@@ -46,4 +47,30 @@ end
         p = graph_factorizing_permutation(G)
         @test is_modular_permutation(G, p)
     end
+end
+
+@testset "symmetric graph example [Wikipedia]" begin
+    G = sparse(
+        [1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5,
+         5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7,
+         8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11],
+        [2, 3, 4, 1, 4, 5, 6, 7, 1, 4, 5, 6, 7, 1, 2, 3, 5, 6, 7, 2,
+         3, 4, 6, 7, 2, 3, 4, 5, 8, 9, 10, 11, 2, 3, 4, 5, 8, 9, 10,
+         11, 6, 7, 9, 10, 11, 6, 7, 8, 10, 11, 6, 7, 8, 9, 6, 7, 8, 9],
+        1
+    )
+    T = sort!(StrongModuleTree(G))
+    @test repr(T) == "{1 ((2 3) 4) 5 (6 7) (8 9 (10 11))}"
+end
+
+@testset "directed graph example [Capelle, Habib, Montgolfier 2002]" begin
+    G = sparse(
+        [1, 1, 1, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 8, 8, 10, 10,
+         10, 10, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14],
+        [3, 4, 5, 1, 2, 4, 5, 2, 4, 2, 7, 8, 9, 10, 8, 9, 10, 9, 10, 11,
+         12, 13, 14, 9, 10, 14, 9, 10, 11, 13, 9, 10, 11, 12, 9, 10, 11],
+        1
+    )
+    T = sort!(StrongModuleTree(G))
+    @test repr(T) == "({1 2 [3 4 5]} {[6 7 8] 9 10 {11 (12 13) 14}})"
 end
