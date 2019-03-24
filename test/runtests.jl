@@ -58,7 +58,7 @@ function test_permutations(G::AbstractMatrix, T::StrongModuleTree, N::Integer=10
     end
 end
 
-@testset "symmetric graph example [Wikipedia]" begin
+@testset "symmetric graph example [Habib & Paul 2009 / Wikipedia]" begin
     G = sparse(
         [1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5,
          5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7,
@@ -73,7 +73,7 @@ end
     test_permutations(G, T)
 end
 
-@testset "directed graph example [Capelle, Habib, Montgolfier 2002]" begin
+@testset "directed graph example [Capelle, Habib & Montgolfier 2002]" begin
     G = sparse(
         [1, 1, 1, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 8, 8, 10, 10,
          10, 10, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14],

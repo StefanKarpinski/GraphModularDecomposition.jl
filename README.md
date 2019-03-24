@@ -3,9 +3,10 @@
 This package implements [modular decomposition](https://en.wikipedia.org/wiki/Modular_decomposition)
 of directed graphs using algorithms from the following three papers:
 
-* McConnell & Montgolfier 2004: _"Linear-time modular decomposition of directed graphs"_
-* Capelle, Habib & de Montgolfier 2002: _"Graph decompositions and factorizing permutations"_
 * Habib, Paul & Viennot 1999: _"Partition refinement techniques: an interesting algorithmic tool kit"_
+* Capelle, Habib & de Montgolfier 2002: _"Graph decompositions and factorizing permutations"_
+* McConnell & Montgolfier 2004: _"Linear-time modular decomposition of directed graphs"_
+* Habib & Paul 2009: _"A survey on algorithmic aspects of modular decomposition"_
 
 The implementation as it currently stands is not linear time for fairly silly reasons. Specifically,
 I used a brute force algorithm for computing the overlap components of two strong module trees; a
