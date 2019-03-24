@@ -49,6 +49,15 @@ end
     end
 end
 
+function test_permutations(G::AbstractMatrix, T::StrongModuleTree, N::Integer=100)
+    n = LinearAlgebra.checksquare(G)
+    for _ = 1:N
+        p = shuffle(1:n)
+        G′ = G[p,p]
+        @test sort!(p[StrongModuleTree(G′)]) == T
+    end
+end
+
 @testset "symmetric graph example [Wikipedia]" begin
     G = sparse(
         [1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5,
@@ -61,6 +70,7 @@ end
     )
     T = sort!(StrongModuleTree(G))
     @test repr(T) == "{1 ((2 3) 4) 5 (6 7) (8 9 (10 11))}"
+    test_permutations(G, T)
 end
 
 @testset "directed graph example [Capelle, Habib, Montgolfier 2002]" begin
@@ -73,4 +83,5 @@ end
     )
     T = sort!(StrongModuleTree(G))
     @test repr(T) == "({1 2 [3 4 5]} {[6 7 8] 9 10 {11 (12 13) 14}})"
+    test_permutations(G, T)
 end
