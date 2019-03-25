@@ -1,7 +1,7 @@
 # GraphModularDecomposition.jl
 
 This package implements [modular decomposition](https://en.wikipedia.org/wiki/Modular_decomposition)
-of directed graphs using algorithms from the following three papers:
+of directed graphs using algorithms from the following papers:
 
 * Habib, Paul & Viennot 1999: _"Partition refinement techniques: an interesting algorithmic tool kit"_
 * Capelle, Habib & de Montgolfier 2002: _"Graph decompositions and factorizing permutations"_
