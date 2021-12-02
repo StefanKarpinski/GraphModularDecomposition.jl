@@ -24,6 +24,15 @@ function all_modules(G::AbstractMatrix)
     end
 end
 
+function maximal_independent_sets(G::AbstractMatrix)
+    n = checksquare(G)
+    C(i, j) = G[i,j] == G[j,i] == 0
+    filter!(collect(subsets(1:n))) do S
+        all(C(i, j) for i in S for j in S) &&
+        !any(all(C(i, j) for i in S) for j in 1:n if j ∉ S)
+    end
+end
+
 function all_strong_modules(G::AbstractMatrix)
     modules = all_modules(G)
     filter(modules) do A
