@@ -1,51 +1,46 @@
-using GraphModularDecomposition
-using LinearAlgebra
-using Random
-using SparseArrays
-using Test
+include("setup.jl")
 
-include("testutils.jl")
-using .TestUtils
-
-@testset "factorizing permutations for symmetric graphs" begin
-    for _ = 1:100
-        n = rand(3:10)
-        G = rand(0:1, n, n)
-        G .= G .⊻ G'
-        @test G == G'
-        p = symgraph_factorizing_permutation(G)
-        @test is_modular_permutation(G, p)
-        T = sort!(StrongModuleTree(G, p))
-        @test sort!(strong_modules(T)) == sort!(all_strong_modules(G))
-        for _ = 1:10
-            p′ = symgraph_factorizing_permutation(G, shuffle(1:n))
-            @test is_modular_permutation(G, p′)
-            T′ = sort!(StrongModuleTree(G, p′))
-            @test T == T′
+@testset "factorizing permutations" begin
+    @testset "symmetric graphs" begin
+        for _ = 1:100
+            n = rand(3:10)
+            G = rand(0:1, n, n)
+            G .= G .⊻ G'
+            @test G == G'
+            p = symgraph_factorizing_permutation(G)
+            @test is_modular_permutation(G, p)
+            T = sort!(StrongModuleTree(G, p))
+            @test sort!(strong_modules(T)) == sort!(all_strong_modules(G))
+            for _ = 1:10
+                p′ = symgraph_factorizing_permutation(G, shuffle(1:n))
+                @test is_modular_permutation(G, p′)
+                T′ = sort!(StrongModuleTree(G, p′))
+                @test T == T′
+            end
         end
     end
-end
 
-@testset "factorizing permutations for tournament graphs" begin
-    for _ = 1:1000
-        n = rand(3:10)
-        T = Int[i != j && rand(Bool) for i=1:n, j=1:n]
-        T .= T .⊻ T' .⊻ tril(ones(Int,n,n),-1)
-        @test is_tournament(T)
-        p = tournament_factorizing_permutation(T)
-        modules = all_modules(T)
-        @test is_modular_permutation(T, p, modules=modules)
+    @testset "tournament graphs" begin
+        for _ = 1:1000
+            n = rand(3:10)
+            T = Int[i != j && rand(Bool) for i=1:n, j=1:n]
+            T .= T .⊻ T' .⊻ tril(ones(Int,n,n),-1)
+            @test is_tournament(T)
+            p = tournament_factorizing_permutation(T)
+            modules = all_modules(T)
+            @test is_modular_permutation(T, p, modules=modules)
+        end
     end
-end
 
-@testset "factorizing permutations for directed graphs" begin
-    for _ = 1:1000
-        n = rand(3:10)
-        G = Int[i != j && rand(Bool) for i=1:n, j=1:n]
-        p = digraph_factorizing_permutation(G)
-        @test is_modular_permutation(G, p)
-        p = graph_factorizing_permutation(G)
-        @test is_modular_permutation(G, p)
+    @testset "directed graphs" begin
+        for _ = 1:1000
+            n = rand(3:10)
+            G = Int[i != j && rand(Bool) for i=1:n, j=1:n]
+            p = digraph_factorizing_permutation(G)
+            @test is_modular_permutation(G, p)
+            p = graph_factorizing_permutation(G)
+            @test is_modular_permutation(G, p)
+        end
     end
 end
 
@@ -58,7 +53,8 @@ function test_permutations(G::AbstractMatrix, T::StrongModuleTree, N::Integer=10
     end
 end
 
-@testset "symmetric graph example [Habib & Paul 2009 / Wikipedia]" begin
+@testset "symmetric graph example" begin
+    # from Habib & Paul 2009 (and Wikipedia)
     G = sparse(
         [1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5,
          5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7,
@@ -73,7 +69,8 @@ end
     test_permutations(G, T)
 end
 
-@testset "directed graph example [Capelle, Habib & Montgolfier 2002]" begin
+@testset "directed graph example" begin
+    # from Capelle, Habib & Montgolfier 2002
     G = sparse(
         [1, 1, 1, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 8, 8, 10, 10,
          10, 10, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14],

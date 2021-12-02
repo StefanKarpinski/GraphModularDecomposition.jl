@@ -1,16 +1,12 @@
-## graph & permutation testing utilities ##
-module TestUtils
-
-export is_modular_permutation,
-    all_modules,
-    all_strong_modules,
-    is_tournament
-
 using Combinatorics
+using GraphModularDecomposition
+using GraphModularDecomposition: overlap
 using IterTools
 using LinearAlgebra
 using LinearAlgebra: checksquare
-using GraphModularDecomposition: overlap
+using Random
+using SparseArrays
+using Test
 
 const \ = setdiff
 
@@ -28,7 +24,8 @@ function all_strong_modules(G::AbstractMatrix)
     filter(A -> all(B -> !overlap(A, B), modules), modules)
 end
 
-function is_modular_permutation(G::AbstractMatrix, p::Vector{Int}; modules = all_strong_modules(G))
+function is_modular_permutation(G::AbstractMatrix, p::Vector{Int};
+    modules = all_strong_modules(G))
     isempty(modules) && return true
     diffs = map(M->diff(findall(in(M), p)), modules)
     maximum(maximum, diffs) == 1
@@ -36,12 +33,11 @@ end
 
 findin_partition(P, S) = sort!(map(x->findfirst(X->x in X, P), S))
 
-function is_modular_partition(G::AbstractMatrix, P::Vector{Vector{Int}}; modules=all_strong_modules(G))
+function is_modular_partition(G::AbstractMatrix, P::Vector{Vector{Int}};
+    modules = all_strong_modules(G))
     sort!(vcat(P...)) == collect(1:size(G,2)) || error("not a partition")
     diffs = map(M->diff(findin_partition(P, M)), modules)
     maximum(maximum, diffs) == 1
 end
 
 is_tournament(G::AbstractMatrix) = G + G' + I == fill(true, size(G))
-
-end # module
