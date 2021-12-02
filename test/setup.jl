@@ -12,7 +12,6 @@ const \ = setdiff
 
 function is_module(G::AbstractMatrix, S::Vector{Int})
     n = checksquare(G)
-    !isempty(S) &&
     all(G[i,k] == G[j,k] && G[k,i] == G[k,j]
         for i in S for j in S for k in 1:n if k ∉ S)
 end
