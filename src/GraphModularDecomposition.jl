@@ -115,11 +115,33 @@ function tournament_factorizing_permutation(
     return map(first, P)
 end
 
-overlap(A::AbstractVector, B::AbstractVector) =
-    # TODO: efficient overlap checking for sorted vectors
-    # return true as soon as one elt of each is found:
-    # x ∩ y, x \ y, y \ x
-    A !== B && !isempty(A \ B) && !isempty(A ∩ B) && !isempty(B \ A)
+# compute whether A ∩ B, A \ B and B \ A are all non-empty
+# this assumes that A and B are both sorted
+function overlap(A::AbstractVector{T}, B::AbstractVector{T}) where {T}
+    A === B && return false
+    A_and_B = A_not_B = B_not_A = false
+    m, n = length(A), length(B)
+    (m ≤ 0 || n ≤ 0) && return false
+    i = j = 1
+    x, y = A[i], B[j]
+    while i ≤ m && j ≤ n
+        if x == y
+            A_and_B = true # x ∈ A ∩ B
+            x = get(A, i += 1, x)
+            y = get(B, j += 1, y)
+        elseif x < y
+            A_not_B = true # x ∈ A \ B
+            x = get(A, i += 1, x)
+        else # y < x
+            B_not_A = true # y ∈ B \ A
+            y = get(B, j += 1, y)
+        end
+        A_not_B |= i ≤ m && j > n
+        B_not_A |= i > m && j ≤ n
+        A_and_B & A_not_B & B_not_A && return true
+    end
+    return false
+end
 
 function overlap_components(
     s::StrongModuleTree,
