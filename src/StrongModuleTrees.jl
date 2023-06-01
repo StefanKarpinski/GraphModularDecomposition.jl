@@ -2,7 +2,7 @@ module StrongModuleTrees
 
 export StrongModuleTree, strong_modules,
     leaves, leaf_count, first_leaf, last_leaf, rand_leaf,
-    nodes, node_count, parent_node
+    nodes, node_count, parent_node, is_cograph
 
 using ..GraphModularDecomposition
 
@@ -285,5 +285,10 @@ function Base.sort!(t::StrongModuleTree; lt=isless, by=first_leaf, rev::Bool=fal
     sort!(t.nodes, lt=lt, by=by, rev=rev)
     return t
 end
+
+## predicates on StrongModuleTrees
+
+is_cograph(t::StrongModuleTree) = t.kind != :prime && all(is_cograph, t.nodes)
+is_cograph(x::Any) = true
 
 end # module
