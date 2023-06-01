@@ -151,7 +151,7 @@ function overlap_components(
 )
     # TODO: implement linear time algorithm from this thesis:
     ## Dalhaus 1998: "Parallel algorithms for hierarchical clustering and
-    ##  applications to split decomposition and parity graph recognition"
+    ## applications to split decomposition and parity graph recognition"
     ## There's also a 2000 paper by the same name, but the PDF is jumbled
 
     O = M ∪ N
@@ -252,7 +252,7 @@ end
 
 function graph_factorizing_permutation(G::AbstractMatrix)
     a, b = extrema(G)
-    0 ≤ a ≤ b ≤ 1 ||
+    0 ≤ a ≤ b ≤ 1 ||
         error("factoring multi-color two-structures not supported")
     issymmetric(G) ?
         symgraph_factorizing_permutation(G) :

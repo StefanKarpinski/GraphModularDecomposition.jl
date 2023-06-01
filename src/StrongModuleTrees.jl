@@ -88,7 +88,7 @@ function StrongModuleTree(
                         cl[k] += 1
                         l = k + 1
                     end
-                else # this node and prev not twins
+                else # this node and prev aren't twins
                     if i < j-1
                         op[i] += 1
                         cl[j-1] += 1
