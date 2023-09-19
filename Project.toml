@@ -1,7 +1,7 @@
 name = "GraphModularDecomposition"
 uuid = "121f9274-62d5-5b8c-9a84-8b75f40638f7"
 authors = ["Stefan Karpinski <stefan@karpinski.org>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
