@@ -15,7 +15,10 @@ using .StrongModuleTrees
 
 const \ = setdiff
 
-function symgraph_factorizing_permutation(G::AbstractMatrix, V::Vector{Int}=collect(1:checksquare(G)))
+function symgraph_factorizing_permutation(
+    G :: AbstractMatrix,
+    V :: Vector{Int} = collect(1:checksquare(G)),
+)
     P = [V]
     center::Int = 0
     pivots::Vector{Vector{Int}} = []
@@ -101,15 +104,15 @@ function symgraph_factorizing_permutation(G::AbstractMatrix, V::Vector{Int}=coll
 end
 
 function tournament_factorizing_permutation(
-        T::AbstractMatrix, # matrix representation of a tournament digraph
-        V::Vector{Int} = collect(1:checksquare(T)),
-    )
+    G :: AbstractMatrix, # matrix representation of a tournament digraph
+    V :: Vector{Int} = collect(1:checksquare(G)),
+)
     n, P = length(V), [V]
     for x = V
         i = findfirst(C->x in C, P)
         C = P[i]
-        B = filter(y->x != y && T[x,y] < T[y,x], C)
-        A = filter(y->x != y && T[y,x] < T[x,y], C)
+        B = filter(y->x != y && G[x,y] < G[y,x], C)
+        A = filter(y->x != y && G[y,x] < G[x,y], C)
         splice!(P, i, filter!(!isempty, [B, [x], A]))
     end
     return map(first, P)
@@ -117,7 +120,10 @@ end
 
 # compute whether A ∩ B, A \ B and B \ A are all non-empty
 # this assumes that A and B are both sorted
-function overlap(A::AbstractVector{T}, B::AbstractVector{T}) where {T}
+function overlap(
+    A :: AbstractVector{T},
+    B :: AbstractVector{T},
+) where {T}
     A === B && return false
     A_and_B = A_not_B = B_not_A = false
     m, n = length(A), length(B)
@@ -144,8 +150,8 @@ function overlap(A::AbstractVector{T}, B::AbstractVector{T}) where {T}
 end
 
 function overlap_components(
-    s::StrongModuleTree,
-    t::StrongModuleTree,
+    s :: StrongModuleTree,
+    t :: StrongModuleTree,
     M = strong_modules(s),
     N = strong_modules(t),
 )
@@ -174,9 +180,9 @@ function overlap_components(
 end
 
 function intersect_permutation(
-    V::AbstractVector{E},   # vertices
-    s::StrongModuleTree{E}, # 1st strong module tree
-    t::StrongModuleTree{E}, # 2nd strong module tree
+    V :: AbstractVector{E},   # vertices
+    s :: StrongModuleTree{E}, # 1st strong module tree
+    t :: StrongModuleTree{E}, # 2nd strong module tree
 ) where E
     Ms = strong_modules(s)
     Mt = strong_modules(t)
@@ -215,7 +221,9 @@ function intersect_permutation(
     return p
 end
 
-function digraph_factorizing_permutation(G::AbstractMatrix)
+function digraph_factorizing_permutation(
+    G :: AbstractMatrix,
+)
     n = checksquare(G)
     Gs = G .| G'
     Gd = G .& G'
