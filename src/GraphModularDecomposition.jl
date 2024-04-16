@@ -40,20 +40,20 @@ function symgraph_factorizing_permutation(
             end
             Xₐ = X ∩ S
             isempty(Xₐ) && continue
-            X = X \ Xₐ
-            isempty(X) && continue
-            P[i] = X
+            Xₙ = X \ Xₐ
+            isempty(Xₙ) && continue
+            P[i] = Xₙ
             insert!(P, i + between, Xₐ)
-            add_pivot(X, Xₐ)
+            add_pivot(X, Xₐ, Xₙ)
             i += 1
         end
     end
 
-    function add_pivot(X, Xₐ)
+    function add_pivot(X, Xₐ, Xₙ)
         if X in pivots
             push!(pivots, Xₐ)
         else
-            S, L = smaller_larger(X, Xₐ)
+            S, L = smaller_larger(Xₐ, Xₙ)
             push!(pivots, S)
             i = findfirst(isequal(X), modules)
             if i !== nothing
