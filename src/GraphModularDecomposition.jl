@@ -228,8 +228,8 @@ function digraph_factorizing_permutation(
     Gs = G .| G'
     Gd = G .& G'
     H = Gs .+ Gd
-    ps = graph_factorizing_permutation(Gs)
-    pd = graph_factorizing_permutation(Gd)
+    ps = symgraph_factorizing_permutation(Gs)
+    pd = symgraph_factorizing_permutation(Gd)
     s = StrongModuleTree(Gs, ps)
     t = StrongModuleTree(Gd, pd)
     p = intersect_permutation(1:n, s, t)
