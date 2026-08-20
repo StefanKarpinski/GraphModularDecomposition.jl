@@ -11,7 +11,6 @@ using LinearAlgebra: checksquare
 
 include("OverlapComponents.jl")
 using .OverlapComponents
-import .OverlapComponents: overlap_components # extended for module trees below
 
 include("StrongModuleTrees.jl")
 using .StrongModuleTrees
@@ -121,18 +120,6 @@ function tournament_factorizing_permutation(
     return map(first, P)
 end
 
-function overlap_components(
-    s :: StrongModuleTree,
-    t :: StrongModuleTree,
-    M = strong_modules(s),
-    N = strong_modules(t),
-)
-    # this is Dahlhaus' linear time algorithm; see src/OverlapComponents.jl.
-    # M ∪ N drops sets appearing in both trees: a set never overlaps a copy of
-    # itself, so keeping both would yield the same component twice.
-    return overlap_components(M ∪ N)
-end
-
 function intersect_permutation(
     V :: AbstractVector{E},   # vertices
     s :: StrongModuleTree{E}, # 1st strong module tree
@@ -140,7 +127,9 @@ function intersect_permutation(
 ) where E
     Ms = strong_modules(s)
     Mt = strong_modules(t)
-    U = filter!(overlap_components(s, t, Ms, Mt)) do X
+    # Ms ∪ Mt drops the modules the two trees share: a set never overlaps a copy
+    # of itself, so keeping both copies would yield the same component twice
+    U = filter!(overlap_components(Ms ∪ Mt)) do X
         (X in Ms || parent_node(s, X).kind != :prime) &&
         (X in Mt || parent_node(t, X).kind != :prime)
     end

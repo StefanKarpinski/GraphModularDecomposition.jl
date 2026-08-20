@@ -154,7 +154,6 @@ end
         s = StrongModuleTree(Gs, symgraph_factorizing_permutation(Gs))
         t = StrongModuleTree(Gd, symgraph_factorizing_permutation(Gd))
         M, N = strong_modules(s), strong_modules(t)
-        got = sort!(GraphModularDecomposition.overlap_components(s, t, M, N))
-        @test got == brute_overlap_components(M ∪ N)
+        @test sort!(overlap_components(M ∪ N)) == brute_overlap_components(M ∪ N)
     end
 end
