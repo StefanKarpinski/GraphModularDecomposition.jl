@@ -50,14 +50,31 @@ function StrongModuleTree(
     end
 
     # remove non-module "dummy" nodes
-    let s = Int[]
+    #
+    # a node spanning i:j is a module iff no cutter of a pair inside it lies
+    # outside it. rescanning lc and uc across the whole span to find that out
+    # costs O(span) per node; instead every open paren carries the extremes of
+    # everything seen since it opened, and passes them to its parent on the way
+    # out, which is O(1) per node
+    let s = Int[], lo = Int[], hi = Int[]
         for j = 1:n
-            for _ = 1:op[j]; push!(s, j); end
+            # the cutters of the pair (j-1, j) belong to every node still open
+            if j > 1 && !isempty(s)
+                lo[end] = min(lo[end], lc[j-1])
+                hi[end] = max(hi[end], uc[j-1])
+            end
+            for _ = 1:op[j]
+                push!(s, j)
+                push!(lo, typemax(Int))
+                push!(hi, typemin(Int))
+            end
             for _ = 1:cl[j]
-                i = pop!(s)
+                i, l, u = pop!(s), pop!(lo), pop!(hi)
+                if !isempty(s)
+                    lo[end] = min(lo[end], l)
+                    hi[end] = max(hi[end], u)
+                end
                 if i < j
-                    l = minimum(lc[k] for k = i:j-1)
-                    u = maximum(uc[k] for k = i:j-1)
                     i <= l && u <= j && continue
                 end
                 op[i] -= 1
@@ -129,15 +146,25 @@ function StrongModuleTree(
 ) where {T <: Any}
     # continues from end of StrongModuleTree(G, p)
 
+    # returns the classified node together with its first leaf. the leaf comes
+    # back up rather than being searched for again because first_leaf walks to
+    # the bottom of the subtree: calling it inside the comparison loop below
+    # costs O(depth) every time, which is quadratic on a deep tree
     function classify_nodes(t::Vector)
         n = length(t)
+        nodes = Vector{Union{T,StrongModuleTree{T}}}(undef, n)
+        leaf = Vector{T}(undef, n)
+        for i = 1:n
+            x = t[i]
+            nodes[i], leaf[i] = x isa Vector ? classify_nodes(x) : (x, x)
+        end
         counts = zeros(Int, n)
-        x, y = first_leaf(t[1]), first_leaf(t[2])
+        x, y = leaf[1], leaf[2]
         edge = (G[y,x], G[x,y])
         local a, b
         for i = 1:n, j = 1:n
             i == j && continue
-            x, y = first_leaf(t[i]), first_leaf(t[j])
+            x, y = leaf[i], leaf[j]
             a, b = G[y,x], G[x,y]
             if edge == (a, b)
                 counts[i] += 1
@@ -152,7 +179,7 @@ function StrongModuleTree(
             all(d -> d == 2, diff(counts)) ? :linear : :prime
         edge[1] <= edge[2] || (edge = reverse(edge))
         kind == :prime && (edge = ())
-        StrongModuleTree{T}(kind, edge, map(x->x isa Vector ? classify_nodes(x) : x, t))
+        return StrongModuleTree{T}(kind, edge, nodes), leaf[1]
     end
 
     function delete_weak_modules!(t::StrongModuleTree)
@@ -179,7 +206,7 @@ function StrongModuleTree(
             pop!(s)
         end
     end
-    t = classify_nodes(s[end])
+    t, _ = classify_nodes(s[end])
     delete_weak_modules!(t)
     return t
 end

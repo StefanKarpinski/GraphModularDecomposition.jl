@@ -30,9 +30,18 @@ function symgraph_factorizing_permutation(
     N_adj(x, X=V) = [y for y in X if y != x && G[x,y] != 0]
     N_non(x, X=V) = [y for y in X if y != x && G[x,y] == 0]
 
+    # membership flags, so that refine! can split each part in one pass over it
+    # instead of intersecting it with the pivot set, and so that the pivot set
+    # can be subtracted from a neighbourhood as the neighbourhood is built
+    in_pivot_set = falses(checksquare(G))
+    in_pivot_part = falses(checksquare(G))
+
     smaller_larger(A, B) = length(A) <= length(B) ? (A, B) : (B, A)
 
     function refine!(P, S, x)
+        for y in S
+            in_pivot_set[y] = true
+        end
         i, between = 0, false
         while (i += 1) <= length(P)
             X = P[i]
@@ -40,14 +49,25 @@ function symgraph_factorizing_permutation(
                 between = !between
                 continue
             end
-            Xₐ = X ∩ S
-            isempty(Xₐ) && continue
-            Xₙ = X \ Xₐ
-            isempty(Xₙ) && continue
+            # X ∩ S followed by X \ (X ∩ S) walks S once per part, so refining
+            # the whole partition costs O(|P|·|S|); splitting X against the
+            # membership flags instead costs O(|X|), and O(Σ|X|) over the
+            # partition. element order within each half is the order within X,
+            # exactly as intersect and setdiff give it
+            k = count(y -> in_pivot_set[y], X)
+            (k == 0 || k == length(X)) && continue
+            Xₐ, Xₙ = Vector{Int}(undef, k), Vector{Int}(undef, length(X) - k)
+            a = b = 0
+            for y in X
+                in_pivot_set[y] ? (Xₐ[a += 1] = y) : (Xₙ[b += 1] = y)
+            end
             P[i] = Xₙ
             insert!(P, i + between, Xₐ)
             add_pivot(X, Xₐ, Xₙ)
             i += 1
+        end
+        for y in S
+            in_pivot_set[y] = false
         end
     end
 
@@ -76,9 +96,18 @@ function symgraph_factorizing_permutation(
         while init_partition!(P)
             while !isempty(pivots)
                 E = pop!(pivots)
+                for y in E
+                    in_pivot_part[y] = true
+                end
                 for x in E
-                    S = N_adj(x) \ E
+                    # N_adj(x) \ E, without materializing the neighbourhood
+                    # first and then hashing E to subtract it
+                    S = [y for y in V
+                         if y != x && G[x,y] != 0 && !in_pivot_part[y]]
                     refine!(P, S, x)
+                end
+                for y in E
+                    in_pivot_part[y] = false
                 end
             end
         end
