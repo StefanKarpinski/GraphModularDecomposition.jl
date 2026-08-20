@@ -8,7 +8,9 @@ export StrongModuleTree, strong_modules,
 
 using LinearAlgebra
 using LinearAlgebra: checksquare
-using SparseArrays
+
+include("OverlapComponents.jl")
+using .OverlapComponents
 
 include("StrongModuleTrees.jl")
 using .StrongModuleTrees
@@ -118,67 +120,6 @@ function tournament_factorizing_permutation(
     return map(first, P)
 end
 
-# compute whether A ∩ B, A \ B and B \ A are all non-empty
-# this assumes that A and B are both sorted
-function overlap(
-    A :: AbstractVector{T},
-    B :: AbstractVector{T},
-) where {T}
-    A === B && return false
-    A_and_B = A_not_B = B_not_A = false
-    m, n = length(A), length(B)
-    (m ≤ 0 || n ≤ 0) && return false
-    i = j = 1
-    x, y = A[i], B[j]
-    while i ≤ m && j ≤ n
-        if x == y
-            A_and_B = true # x ∈ A ∩ B
-            x = get(A, i += 1, x)
-            y = get(B, j += 1, y)
-        elseif x < y
-            A_not_B = true # x ∈ A \ B
-            x = get(A, i += 1, x)
-        else # y < x
-            B_not_A = true # y ∈ B \ A
-            y = get(B, j += 1, y)
-        end
-        A_not_B |= i ≤ m && j > n
-        B_not_A |= i > m && j ≤ n
-        A_and_B & A_not_B & B_not_A && return true
-    end
-    return false
-end
-
-function overlap_components(
-    s :: StrongModuleTree,
-    t :: StrongModuleTree,
-    M = strong_modules(s),
-    N = strong_modules(t),
-)
-    # TODO: implement linear time algorithm from this thesis:
-    ## Dalhaus 1998: "Parallel algorithms for hierarchical clustering and
-    ## applications to split decomposition and parity graph recognition"
-    ## There's also a 2000 paper by the same name, but the PDF is jumbled
-
-    O = M ∪ N
-    n = length(O)
-    R = SparseMatrixCSC{Int}(I, n, n)
-    for i = 1:n-1, j = i+1:n
-        overlap(O[i], O[j]) || continue
-        R[i,j] = R[j,i] = 1
-    end
-    while true
-        R′ = min.(1, R^2)
-        R′ == R && break
-        R .= R′
-    end
-    for (i, j) in map(Tuple, findall(!iszero, R))
-        i < j || continue
-        O[i] = O[j] = sort!(O[i] ∪ O[j])
-    end
-    return unique(O)
-end
-
 function intersect_permutation(
     V :: AbstractVector{E},   # vertices
     s :: StrongModuleTree{E}, # 1st strong module tree
@@ -186,7 +127,9 @@ function intersect_permutation(
 ) where E
     Ms = strong_modules(s)
     Mt = strong_modules(t)
-    U = filter!(overlap_components(s, t, Ms, Mt)) do X
+    # Ms ∪ Mt drops the modules the two trees share: a set never overlaps a copy
+    # of itself, so keeping both copies would yield the same component twice
+    U = filter!(overlap_components(Ms ∪ Mt)) do X
         (X in Ms || parent_node(s, X).kind != :prime) &&
         (X in Mt || parent_node(t, X).kind != :prime)
     end

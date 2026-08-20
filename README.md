@@ -8,13 +8,6 @@ of directed graphs using algorithms from the following papers:
 * McConnell & Montgolfier 2004: _"Linear-time modular decomposition of directed graphs"_
 * Habib & Paul 2009: _"A survey on algorithmic aspects of modular decomposition"_
 
-The implementation as it currently stands is not linear time for fairly silly reasons. Specifically,
-I used a brute force algorithm for computing the overlap components of two strong module trees; a
-linear time algorithm exists, as described in Dalhaus 1998, "Parallel algorithms for hierarchical
-clustering and applications to split decomposition and parity graph recognition", but I didn't
-bother to implement it. There are also parts of strong module tree construction from a factorizing
-permutation that may be super-linear unnecessarily.
-
 The strong module tree construction code uses an efficient and novel (to me at least) approach to
 manipulating trees: instead of building tree data structures explicitly, since the tree operations
 always keep the leaves in the same order, it works with counts of how many open and close
