@@ -52,14 +52,20 @@ function symgraph_factorizing_permutation(
     end
 
     function add_pivot(X, Xₐ, Xₙ)
-        if X in pivots
-            push!(pivots, Xₐ)
+        i = findfirst(isequal(X), pivots)
+        if i !== nothing
+            # every vertex of X was going to be used as a pivot, so every
+            # vertex of both parts it just split into still has to be, and X
+            # itself is no longer a part: L ← L ∪ {Xₐ, Xₙ} \ {X} in the
+            # notation of Habib & Paul 2009, algorithm 2
+            deleteat!(pivots, i)
+            push!(pivots, Xₐ, Xₙ)
         else
             S, L = smaller_larger(Xₐ, Xₙ)
             push!(pivots, S)
-            i = findfirst(isequal(X), modules)
-            if i !== nothing
-                modules[i] = L
+            j = findfirst(isequal(X), modules)
+            if j !== nothing
+                modules[j] = L
             else
                 push!(modules, L)
             end

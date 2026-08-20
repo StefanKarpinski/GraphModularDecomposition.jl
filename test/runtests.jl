@@ -1,5 +1,6 @@
 include("setup.jl")
 include("overlap.jl")
+include("factorizing.jl")
 
 @testset "factorizing permutations" begin
     @testset "symmetric graphs" begin
