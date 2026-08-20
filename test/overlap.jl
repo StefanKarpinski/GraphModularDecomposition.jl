@@ -83,9 +83,14 @@ end
 
 ## randomized differential testing against the brute force reference ##
 
-rand_sets(n, m) = [sort!(shuffle(1:n)[1:rand(0:n)]) for _ = 1:m]
-rand_small_sets(n, m) = [sort!(shuffle(1:n)[1:rand(1:min(3, n))]) for _ = 1:m]
-rand_intervals(n, m) = [collect(UnitRange(minmax(rand(1:n), rand(1:n))...)) for _ = 1:m]
+# these tests draw from a private stream rather than the global one, so that
+# including this file does not shift what the randomized tests elsewhere see
+const RNG = MersenneTwister(0xf1e1d)
+
+rand_sets(n, m) = [sort!(shuffle(RNG, 1:n)[1:rand(RNG, 0:n)]) for _ = 1:m]
+rand_small_sets(n, m) = [sort!(shuffle(RNG, 1:n)[1:rand(RNG, 1:min(3, n))]) for _ = 1:m]
+rand_intervals(n, m) =
+    [collect(UnitRange(minmax(rand(RNG, 1:n), rand(RNG, 1:n))...)) for _ = 1:m]
 
 # a random hierarchy over 1:n: laminar, so no two of its sets ever overlap
 function rand_laminar(n::Int)
@@ -93,18 +98,18 @@ function rand_laminar(n::Int)
     function split(V)
         push!(F, sort(V))
         length(V) > 1 || return
-        k = rand(1:length(V)-1)
+        k = rand(RNG, 1:length(V)-1)
         split(V[1:k]); split(V[k+1:end])
     end
-    split(shuffle(1:n))
+    split(shuffle(RNG, 1:n))
     return F
 end
 
 @testset "overlap classes: random families" begin
     families = Dict(
-        "subsets"    => n -> rand_sets(n, rand(1:12)),
-        "small sets" => n -> rand_small_sets(n, rand(1:20)),
-        "intervals"  => n -> rand_intervals(n, rand(1:15)),
+        "subsets"    => n -> rand_sets(n, rand(RNG, 1:12)),
+        "small sets" => n -> rand_small_sets(n, rand(RNG, 1:20)),
+        "intervals"  => n -> rand_intervals(n, rand(RNG, 1:15)),
         "laminar"    => n -> rand_laminar(n),
         # two hierarchies over one ground set: what modular decomposition feeds
         # to overlap_components, and the only case that reaches it in this package
@@ -113,7 +118,7 @@ end
     for (name, generate) in families
         @testset "$name" begin
             for _ = 1:200
-                n = rand(1:14)
+                n = rand(RNG, 1:14)
                 F = generate(n)
                 @test fast_max(F, n) == brute_max(F, n)
                 @test same_classes(first(overlap_classes(F, n)),
@@ -143,8 +148,8 @@ end
 
 @testset "overlap components of strong module trees" begin
     for _ = 1:200
-        n = rand(3:9)
-        G = Int[i != j && rand(Bool) for i = 1:n, j = 1:n]
+        n = rand(RNG, 3:9)
+        G = Int[i != j && rand(RNG, Bool) for i = 1:n, j = 1:n]
         Gs, Gd = G .| G', G .& G'
         s = StrongModuleTree(Gs, symgraph_factorizing_permutation(Gs))
         t = StrongModuleTree(Gd, symgraph_factorizing_permutation(Gd))
