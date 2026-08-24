@@ -136,3 +136,31 @@ end
     end
     @test disagreements == 0
 end
+
+# Cutters are found two different ways, by scanning a dense matrix and by
+# merging the relation lists of a sparse one, so the representation is now
+# something the answer could depend on and must not.
+@testset "cutters agree across representations" begin
+    rng = MersenneTwister(0x5ca7) # a private stream: see test/overlap.jl
+    for _ = 1:2000
+        n = rand(rng, 2:14)
+        G = zeros(Int, n, n)
+        kind = rand(rng, 1:3)
+        if kind == 1                                        # symmetric graph
+            for i = 1:n-1, j = i+1:n
+                G[i,j] = G[j,i] = rand(rng, 0:1)
+            end
+        elseif kind == 2                                    # digraph
+            for i = 1:n, j = 1:n
+                i != j && (G[i,j] = rand(rng, 0:1))
+            end
+        else                                                # 0/1/2 two-structure
+            for i = 1:n-1, j = i+1:n
+                G[i,j] = G[j,i] = rand(rng, 0:2)
+            end
+        end
+        p = shuffle(rng, 1:n)
+        @test repr(StrongModuleTree(G, copy(p))) ==
+              repr(StrongModuleTree(sparse(G), copy(p)))
+    end
+end
