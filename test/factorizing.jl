@@ -73,3 +73,38 @@ end
         @warn "non-modular permutation" G=first_failure[1] p=first_failure[2]
     @test failures == 0
 end
+
+# Regression for the digraph path. intersect_permutation builds a laminar family
+# of sets and walks it to lay the vertices out. A strong module can fail to be
+# one of those sets and still have to come out contiguous: below, {1,4} is a
+# module, is not one of the sets, and stays together only because the leaves
+# belonging to a node directly are not separated by that node's children.
+@testset "factorizing permutations: digraph regressions" begin
+    G = [0 0 1 0 0
+         0 0 0 0 0
+         0 1 0 0 0
+         0 0 1 0 0
+         0 1 1 0 0]
+    @test is_module(G, [1, 4])
+    p = digraph_factorizing_permutation(G)
+    @test sort(p) == collect(1:5)
+    @test diff(sort([findfirst(isequal(x), p) for x in (1, 4)])) == [1]
+    @test is_modular_permutation(G, p)
+
+    # That graph turned up about once in 50,000 random digraphs, so a sweep of a
+    # few thousand would have proved nothing -- and did not, when it was tried.
+    # This one reports two failures against the code the regression is for.
+    rng = MersenneTwister(3) # a private stream: see test/overlap.jl
+    failures, first_failure = 0, nothing
+    for _ = 1:25_000
+        n = rand(rng, 4:7)
+        H = Int[i != j && rand(rng, Bool) for i = 1:n, j = 1:n]
+        q = digraph_factorizing_permutation(H)
+        sort(q) == collect(1:n) && is_modular_permutation(H, q) && continue
+        failures += 1
+        first_failure === nothing && (first_failure = (copy(H), copy(q)))
+    end
+    failures == 0 ||
+        @warn "non-modular permutation" G=first_failure[1] p=first_failure[2]
+    @test failures == 0
+end

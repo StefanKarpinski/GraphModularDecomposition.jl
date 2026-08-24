@@ -283,6 +283,83 @@ nodes(t::StrongModuleTree) = nodes!(typeof(t)[], t)
 
 strong_modules(t::StrongModuleTree) = map(sort!∘leaves, nodes(t))
 
+"""
+    TreeIndex(t)
+
+An index over the nodes of `t`: where each leaf falls in the tree's leaf order,
+which range of that order each node spans, and each node's parent.
+
+`parent_node` answers "which node sits just above this set of leaves" by
+materializing the leaf set of every child it passes, which costs a subtree walk
+per step. The same question is a lowest-common-ancestor query: the node wanted
+is the lowest one whose leaf range covers the set, and a set's range is fixed by
+its lowest and highest leaf alone. Building the index costs one pass over the
+tree, after which a query is O(|S| + depth) and touches no leaf sets at all.
+"""
+struct TreeIndex{T}
+    leaf   :: Dict{T,Int}                   # leaf -> its place in the leaf order
+    node   :: Vector{StrongModuleTree{T}}
+    parent :: Vector{Int}                   # node -> its parent, 0 for the root
+    first  :: Vector{Int}                   # node -> its first leaf's place
+    last   :: Vector{Int}                   # node -> its last leaf's place
+    holder :: Vector{Int}                   # leaf place -> the node just above it
+end
+
+function TreeIndex(t::StrongModuleTree{T}) where {T}
+    ix = TreeIndex{T}(Dict{T,Int}(), StrongModuleTree{T}[], Int[], Int[], Int[], Int[])
+    function visit(x::StrongModuleTree{T}, parent::Int)
+        push!(ix.node, x); push!(ix.parent, parent)
+        push!(ix.first, length(ix.leaf) + 1); push!(ix.last, 0)
+        i = length(ix.node)
+        for y in x.nodes
+            if y isa StrongModuleTree
+                visit(y, i)
+            else
+                ix.leaf[y] = length(ix.leaf) + 1
+                push!(ix.holder, i)
+            end
+        end
+        ix.last[i] = length(ix.leaf)
+        return i
+    end
+    visit(t, 0)
+    return ix
+end
+
+"""
+    containing_node(ix, S) -> (node, exact)
+
+The lowest node of the indexed tree whose leaves contain every element of `S`,
+and whether its leaves are exactly `S` — which is what asking whether `S` is one
+of the tree's strong modules amounts to.
+"""
+function containing_node(ix::TreeIndex, S)
+    lo = hi = 0
+    for x in S
+        p = ix.leaf[x]
+        lo == 0 && (lo = hi = p)
+        p < lo && (lo = p)
+        p > hi && (hi = p)
+    end
+    lo == 0 && return (1, false) # nothing to contain: the root, and not exactly
+    i = ix.holder[lo]
+    while (ix.first[i] > lo || ix.last[i] < hi) && ix.parent[i] != 0
+        i = ix.parent[i]
+    end
+    return (i, ix.last[i] - ix.first[i] + 1 == length(S))
+end
+
+"""
+    parent_index(ix, S)
+
+The node [`parent_node`](@ref) would return: the lowest node whose leaves
+*strictly* contain `S`, so a node whose leaves are exactly `S` yields its parent.
+"""
+function parent_index(ix::TreeIndex, S)
+    i, exact = containing_node(ix, S)
+    exact && ix.parent[i] != 0 ? ix.parent[i] : i
+end
+
 function parent_node(t::StrongModuleTree, S::Vector)
     for x in t.nodes
         x isa StrongModuleTree || continue
