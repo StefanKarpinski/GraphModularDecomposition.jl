@@ -48,136 +48,280 @@ function symgraph_factorizing_permutation(
     G :: AbstractMatrix,
     V :: Vector{Int} = collect(1:checksquare(G)),
 )
-    P = [V]
-    center::Int = 0
-    pivots::Vector{Vector{Int}} = []
-    modules::Vector{Vector{Int}} = []
-    first_pivot = Dict{Vector{Int},Int}()
+    n, m = checksquare(G), length(V)
+    m <= 1 && return copy(V)
 
-    # membership flags, so that a part can be split in one pass over it rather
-    # than by intersecting it with the splitting set, and so that the pivot part
-    # can be subtracted from a neighbourhood as the neighbourhood is built
-    n = checksquare(G)
-    in_splitter = falses(n)   # the set currently being split by
+    # An ordered partition of V whose parts are consecutive ranges of `elems`.
+    # Splitting a part rearranges only its own range, so no other part moves and
+    # no part's position shifts; two parts therefore compare by position in O(1),
+    # and the part holding a vertex is one lookup away. That is what lets refine!
+    # reach the parts a pivot set meets through the pivot set's own elements,
+    # instead of walking the whole partition looking for them.
+    elems = copy(V)
+    pos, part = zeros(Int, n), zeros(Int, n)
+    for (i, v) in enumerate(elems)
+        pos[v], part[v] = i, 1
+    end
+    lo, hi = [1], [m]
+    hits = [Int[]]     # scratch per part: which of the pivot set's vertices it holds
+    first_pivot = [0]  # part -> the vertex it should be refined by first, 0 if none
+    piv_pos = [0]      # part -> its live index in `pivots`, 0 if absent
+    mod_pos = [0]      # part -> its live index in `modules`, 0 if absent
+    nparts = 1
+
+    function new_part!(l, h)
+        push!(lo, l); push!(hi, h)
+        push!(hits, Int[]); push!(first_pivot, 0)
+        push!(piv_pos, 0); push!(mod_pos, 0)
+        nparts += 1
+        return length(lo)
+    end
+
+    part_size(p) = hi[p] - lo[p] + 1
+
+    # `pivots` is Habib & Paul's L, every vertex of whose parts is used as a
+    # pivot, and `modules` is their K, which contributes one vertex per part.
+    # Both hold part numbers, except that a negative entry in `pivots` denotes
+    # the one-vertex set {-e}, which K's rule produces and which is not a part.
+    # An entry is removed by clearing its position index and leaving the entry
+    # itself to be skipped on the way out, so removing from the middle is O(1).
+    pivots, modules = Int[], Int[]
+    npivots, nmodules, mread = 0, 0, 1
+
+    function push_pivot!(p)
+        push!(pivots, p)
+        p > 0 && (piv_pos[p] = length(pivots))
+        npivots += 1
+    end
+
+    function pop_pivot!()
+        while !isempty(pivots)
+            k = length(pivots)
+            e = pop!(pivots)
+            if e < 0
+                npivots -= 1
+                return e
+            elseif piv_pos[e] == k # a live entry rather than a superseded one
+                piv_pos[e] = 0
+                npivots -= 1
+                return e
+            end
+        end
+        return 0
+    end
+
+    function drop_pivot!(p)
+        piv_pos[p] == 0 && return
+        piv_pos[p] = 0
+        npivots -= 1
+    end
+
+    function push_module!(p)
+        push!(modules, p)
+        mod_pos[p] = length(modules)
+        nmodules += 1
+    end
+
+    function replace_module!(old, new)
+        j = mod_pos[old]
+        mod_pos[old] = 0
+        modules[j] = new
+        mod_pos[new] = j
+    end
+
+    function popfirst_module!()
+        while mread <= length(modules)
+            p = modules[mread]
+            mread += 1
+            if mod_pos[p] == mread - 1
+                mod_pos[p] = 0
+                nmodules -= 1
+                return p
+            end
+        end
+        return 0
+    end
+
+    center::Int = 0
+    in_splitter = falses(n)   # the neighbourhood being split by, in init_partition!
     in_pivot_part = falses(n) # the part the current pivot vertices came from
     in_V = falses(n)          # V may be a subset of the vertices of G
     for y in V
         in_V[y] = true
     end
 
-    smaller_larger(A, B) = length(A) <= length(B) ? (A, B) : (B, A)
-
-    function refine!(P, S, x)
-        for y in S
-            in_splitter[y] = true
+    # Move `ys`, all of which lie in part p, to the front or the back of p's
+    # range and split them off as a part of their own. Only the elements of `ys`
+    # move, so this costs O(|ys|) and not O(|p|); the price is that they end up
+    # in the order `ys` had rather than the order p had, which changes which
+    # factorizing permutation comes out but not which trees it factors.
+    # Returns the two parts, whose vertices did and did not belong to `ys`.
+    function split_part!(p, ys, last)
+        k, sz = length(ys), part_size(p)
+        (k == 0 || k == sz) && return (0, 0)
+        cursor = last ? hi[p] : lo[p]
+        for y in ys
+            j, u = pos[y], elems[cursor]
+            elems[j], pos[u] = u, j
+            elems[cursor], pos[y] = y, cursor
+            cursor += last ? -1 : 1
         end
-        i, between = 0, false
-        while (i += 1) <= length(P)
-            X = P[i]
-            if center in X || x in X
-                between = !between
-                continue
+        ylo, yhi = last ? (hi[p] - k + 1, hi[p]) : (lo[p], lo[p] + k - 1)
+        rlo, rhi = last ? (lo[p], hi[p] - k) : (lo[p] + k, hi[p])
+        # the new part number goes to the smaller side, so that relabelling its
+        # vertices costs O(min(k, sz - k)) rather than O(sz)
+        if k <= sz - k
+            q = new_part!(ylo, yhi)
+            for j = ylo:yhi
+                part[elems[j]] = q
             end
-            # X ∩ S followed by X \ (X ∩ S) walks S once per part, so refining
-            # the whole partition costs O(|P|·|S|); splitting X against the
-            # membership flags instead costs O(|X|), and O(Σ|X|) over the
-            # partition. element order within each half is the order within X,
-            # exactly as intersect and setdiff give it
-            k = count(y -> in_splitter[y], X)
-            (k == 0 || k == length(X)) && continue
-            Xₐ, Xₙ = Vector{Int}(undef, k), Vector{Int}(undef, length(X) - k)
-            a = b = 0
-            for y in X
-                in_splitter[y] ? (Xₐ[a += 1] = y) : (Xₙ[b += 1] = y)
+            lo[p], hi[p] = rlo, rhi
+            return (q, p)
+        else
+            q = new_part!(rlo, rhi)
+            for j = rlo:rhi
+                part[elems[j]] = q
             end
-            P[i] = Xₙ
-            insert!(P, i + between, Xₐ)
-            add_pivot(X, Xₐ, Xₙ)
-            i += 1
-        end
-        for y in S
-            in_splitter[y] = false
+            lo[p], hi[p] = ylo, yhi
+            return (p, q)
         end
     end
 
-    function add_pivot(X, Xₐ, Xₙ)
-        i = findfirst(isequal(X), pivots)
-        if i !== nothing
-            # every vertex of X was going to be used as a pivot, so every
-            # vertex of both parts it just split into still has to be, and X
-            # itself is no longer a part: L ← L ∪ {Xₐ, Xₙ} \ {X} in the
-            # notation of Habib & Paul 2009, algorithm 2
-            deleteat!(pivots, i)
-            push!(pivots, Xₐ, Xₙ)
+    # Habib & Paul 2009, algorithm 2: a part of L splits into two parts of L,
+    # and a part outside L contributes its smaller half to L and leaves its
+    # larger half to K.
+    function record_split!(p, a, b)
+        if piv_pos[p] != 0
+            drop_pivot!(p)
+            push_pivot!(a)
+            push_pivot!(b)
         else
-            S, L = smaller_larger(Xₐ, Xₙ)
-            push!(pivots, S)
-            j = findfirst(isequal(X), modules)
-            if j !== nothing
-                modules[j] = L
+            small, large = part_size(a) <= part_size(b) ? (a, b) : (b, a)
+            push_pivot!(small)
+            if mod_pos[p] != 0
+                replace_module!(p, large)
             else
-                push!(modules, L)
+                push_module!(large)
             end
         end
     end
 
-    function partition_refinement!(P)
-        while init_partition!(P)
-            while !isempty(pivots)
-                E = pop!(pivots)
-                for y in E
-                    in_pivot_part[y] = true
-                end
-                for x in E
-                    # the neighbourhood of x minus the part it came from, built
-                    # in one pass: O(deg x) given a representation that can list
-                    # a vertex's neighbours, O(n) given one that cannot
-                    S = [y for y in neighbors(G, x)
-                         if in_V[y] && !in_pivot_part[y]]
-                    refine!(P, S, x)
-                end
-                for y in E
-                    in_pivot_part[y] = false
-                end
-            end
+    touched = Int[]
+
+    function refine!(S, x)
+        # the parts holding the center and the pivot are never split, and their
+        # positions are what everything else is placed relative to
+        pc, px = part[center], part[x]
+        empty!(touched)
+        for y in S
+            p = part[y]
+            (p == pc || p == px) && continue
+            isempty(hits[p]) && push!(touched, p)
+            push!(hits[p], y)
+        end
+        for p in touched
+            # a part lying between the center and the pivot keeps its neighbours
+            # of x on the far side from the center; every other part keeps them
+            # on the near side
+            between = lo[pc] < lo[p] < lo[px] || lo[px] < lo[p] < lo[pc]
+            a, b = split_part!(p, hits[p], between)
+            empty!(hits[p])
+            a == 0 && continue
+            first_pivot[p] = 0 # p is not the part it was
+            record_split!(p, a, b)
         end
     end
 
-    function init_partition!(P)
-        maximum(length, P) <= 1 && return false
-        if isempty(modules)
-            for (i, X) in enumerate(P)
-                length(X) > 1 || continue
-                x = get(first_pivot, X, first(X))
-                # split X into the neighbours and non-neighbours of x, keeping
-                # the order X had, in O(|X| + deg x) rather than by testing
-                # every element of X against the graph
-                for y in neighbors(G, x)
-                    in_splitter[y] = true
-                end
-                A = [y for y in X if y != x && in_splitter[y]]
-                N = [y for y in X if y != x && !in_splitter[y]]
-                for y in neighbors(G, x)
-                    in_splitter[y] = false
-                end
-                splice!(P, i, filter!(!isempty, [A, [x], N]))
-                S, L = smaller_larger(A, N)
-                center = x
-                push!(pivots, S)
-                push!(modules, L)
-                break
+    # positions before this one hold singleton parts, and parts only shrink, so
+    # the search for a part still worth refining never has to start over
+    unrefined = 1
+
+    function next_part()
+        while unrefined <= m
+            p = part[elems[unrefined]]
+            part_size(p) > 1 && return p
+            unrefined = hi[p] + 1
+        end
+        return 0
+    end
+
+    function init_partition!()
+        nparts == m && return false
+        if nmodules == 0
+            p = next_part()
+            p == 0 && return false
+            x = first_pivot[p] != 0 ? first_pivot[p] : elems[lo[p]]
+            for y in neighbors(G, x)
+                in_splitter[y] = true
             end
+            A, N = Int[], Int[]
+            for j = lo[p]:hi[p]
+                y = elems[j]
+                y == x && continue
+                push!(in_splitter[y] ? A : N, y)
+            end
+            for y in neighbors(G, x)
+                in_splitter[y] = false
+            end
+            # rewrite p's range as the neighbours of x, then x, then the rest,
+            # and give each of the three a part of its own
+            j = lo[p]
+            for y in A
+                elems[j], pos[y] = y, j
+                j += 1
+            end
+            elems[j], pos[x] = x, j
+            xj = j
+            j += 1
+            for y in N
+                elems[j], pos[y] = y, j
+                j += 1
+            end
+            l, h = lo[p], hi[p]
+            nparts -= 1 # p is replaced by the parts made below
+            pa = isempty(A) ? 0 : new_part!(l, l + length(A) - 1)
+            px = new_part!(xj, xj)
+            pn = isempty(N) ? 0 : new_part!(xj + 1, h)
+            for q in (pa, px, pn), j = (q == 0 ? (1:0) : lo[q]:hi[q])
+                part[elems[j]] = q
+            end
+            drop_pivot!(p)
+            mod_pos[p] != 0 && (mod_pos[p] = 0; nmodules -= 1)
+            center = x
+            small, large = length(A) <= length(N) ? (pa, pn) : (pn, pa)
+            small != 0 && push_pivot!(small)
+            large != 0 && push_module!(large)
         else
-            X = popfirst!(modules)
-            x = first(X)
-            push!(pivots, [x])
-            first_pivot[X] = x
+            p = popfirst_module!()
+            p == 0 && return false
+            x = elems[lo[p]]
+            push_pivot!(-x) # the one-vertex set {x}
+            first_pivot[p] = x
         end
         return true
     end
 
-    partition_refinement!(P)
-    return map(first, P)
+    while init_partition!()
+        while npivots > 0
+            e = pop_pivot!()
+            e == 0 && break
+            E = e < 0 ? [-e] : elems[lo[e]:hi[e]]
+            for y in E
+                in_pivot_part[y] = true
+            end
+            for x in E
+                # the neighbourhood of x minus the part it came from, built in
+                # one pass: O(deg x) given a representation that can list a
+                # vertex's neighbours, O(n) given one that cannot
+                S = [y for y in neighbors(G, x) if in_V[y] && !in_pivot_part[y]]
+                refine!(S, x)
+            end
+            for y in E
+                in_pivot_part[y] = false
+            end
+        end
+    end
+    return elems # every part is a singleton, so this is the permutation
 end
 
 function tournament_factorizing_permutation(
