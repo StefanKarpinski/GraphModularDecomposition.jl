@@ -16,6 +16,7 @@ using .OverlapComponents
 
 include("StrongModuleTrees.jl")
 using .StrongModuleTrees
+using .StrongModuleTrees: TreeIndex, containing_node, parent_index
 
 const \ = setdiff
 
@@ -346,40 +347,64 @@ function intersect_permutation(
 ) where E
     Ms = strong_modules(s)
     Mt = strong_modules(t)
+    # Index both trees once. Everything below asks, of a great many sets, which
+    # node sits above the set and whether the set is exactly one of the tree's
+    # modules; unindexed, the first walks the tree materializing the leaf set of
+    # every child it passes and the second scans the whole list of modules.
+    si, ti = TreeIndex(s), TreeIndex(t)
     # Ms ∪ Mt drops the modules the two trees share: a set never overlaps a copy
     # of itself, so keeping both copies would yield the same component twice
     U = filter!(overlap_components(Ms ∪ Mt)) do X
-        (X in Ms || parent_node(s, X).kind != :prime) &&
-        (X in Mt || parent_node(t, X).kind != :prime)
+        # `X in Ms` is `containing_node` reporting an exact match, and when it
+        # reports none the node it found is what parent_node would have returned
+        i, exact = containing_node(si, X)
+        (exact || si.node[i].kind != :prime) || return false
+        j, exact = containing_node(ti, X)
+        return exact || ti.node[j].kind != :prime
     end
     for x in V; push!(U, [x]); end
-    R = Dict()
+    # keyed by node numbers rather than by the nodes themselves, which hash
+    # their whole subtree
+    R = Dict{Tuple{Int,Int},Set{Int}}()
     for X in U
-        S = parent_node(t, X)
-        T = parent_node(s, X)
-        union!(get!(()->Set{Int}(), R, (S, T)), X)
+        key = (parent_index(ti, X), parent_index(si, X))
+        union!(get!(()->Set{Int}(), R, key), X)
     end
     N = U ∪ map(sort!∘collect, values(R))
     N = filter!(X->length(X) > 1, N)
-    T = Any[[] for x in V]
-    for node in sort!(N, by=length, rev=true)
-        an = Vector{Any}(node)
-        for x in node
-            push!(T[x], an)
+    # N is laminar, so it is the node set of a tree, and sorting by decreasing
+    # size makes the sets holding a given leaf that leaf's ancestors, outermost
+    # first. That gives every set its depth in one pass over the sets. Nesting
+    # them by searching and filtering instead costs O(|parent|·|child|) for each
+    # parent and child, and pays it once per leaf of the child.
+    sort!(N, by=length, rev=true)
+    chain = [Int[] for _ in V] # leaf -> its ancestors in N, outermost first
+    for (i, X) in enumerate(N), x in X
+        push!(chain[x], i)
+    end
+    depth = zeros(Int, length(N))
+    for c in chain, (k, i) in enumerate(c)
+        depth[i] = k
+    end
+    # Walk the tree, taking each node's own leaves before any of its children.
+    # Grouping them is not cosmetic: a module can fail to be a node of N and
+    # still have to come out contiguous, and the only thing keeping such a
+    # module together is that the leaves belonging to a node directly are not
+    # separated by that node's children.
+    p, entered = E[], falses(length(N))
+    function emit(i)
+        for x in N[i]
+            length(chain[x]) == depth[i] && push!(p, x) # i holds x directly
+        end
+        for x in N[i]
+            length(chain[x]) == depth[i] && continue
+            c = chain[x][depth[i]+1]
+            entered[c] && continue
+            entered[c] = true
+            emit(c)
         end
     end
-    for x in V, i = 1:length(T[x])-1
-        parent = T[x][i]
-        child = T[x][i+1]
-        child in parent && continue
-        filter!(y->!(y in child), parent)
-        push!(parent, child)
-    end
-    T = T[1][1]
-    p = E[]
-    record_vals(v::Vector) = foreach(record_vals, v)
-    record_vals(x::E) = push!(p, x)
-    record_vals(T)
+    emit(first(chain[first(V)]))
     return p
 end
 
