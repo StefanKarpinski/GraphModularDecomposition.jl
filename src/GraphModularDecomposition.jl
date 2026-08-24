@@ -8,6 +8,8 @@ export StrongModuleTree, strong_modules,
 
 using LinearAlgebra
 using LinearAlgebra: checksquare
+using SparseArrays
+using SparseArrays: nonzeros, nzrange, rowvals
 
 include("OverlapComponents.jl")
 using .OverlapComponents
@@ -16,6 +18,31 @@ include("StrongModuleTrees.jl")
 using .StrongModuleTrees
 
 const \ = setdiff
+
+## iterating a vertex's neighbours ##
+
+"""
+    neighbors(G, x)
+
+Iterate the vertices adjacent to `x`, reading column `x` of `G`.
+
+This is the one graph operation the refinement below needs, and each matrix
+representation can serve it in time proportional to the part of itself that it
+has to touch: scanning a dense column is `O(n)`, which is that column's whole
+size, while walking the stored entries of a sparse column is `O(deg x)`.
+Supporting a new representation efficiently is one more method here.
+
+The callers below are for undirected graphs, where column `x` and row `x` agree.
+Column order is deliberate: it is what a `SparseMatrixCSC` stores contiguously,
+and what a dense column-major `Matrix` reads without striding.
+"""
+neighbors(G::AbstractMatrix, x::Integer) =
+    (y for y in axes(G, 1) if y != x && !iszero(G[y, x]))
+
+function neighbors(G::SparseMatrixCSC, x::Integer)
+    rows, vals = rowvals(G), nonzeros(G)
+    (rows[k] for k in nzrange(G, x) if rows[k] != x && !iszero(vals[k]))
+end
 
 function symgraph_factorizing_permutation(
     G :: AbstractMatrix,
@@ -27,20 +54,22 @@ function symgraph_factorizing_permutation(
     modules::Vector{Vector{Int}} = []
     first_pivot = Dict{Vector{Int},Int}()
 
-    N_adj(x, X=V) = [y for y in X if y != x && G[x,y] != 0]
-    N_non(x, X=V) = [y for y in X if y != x && G[x,y] == 0]
-
-    # membership flags, so that refine! can split each part in one pass over it
-    # instead of intersecting it with the pivot set, and so that the pivot set
+    # membership flags, so that a part can be split in one pass over it rather
+    # than by intersecting it with the splitting set, and so that the pivot part
     # can be subtracted from a neighbourhood as the neighbourhood is built
-    in_pivot_set = falses(checksquare(G))
-    in_pivot_part = falses(checksquare(G))
+    n = checksquare(G)
+    in_splitter = falses(n)   # the set currently being split by
+    in_pivot_part = falses(n) # the part the current pivot vertices came from
+    in_V = falses(n)          # V may be a subset of the vertices of G
+    for y in V
+        in_V[y] = true
+    end
 
     smaller_larger(A, B) = length(A) <= length(B) ? (A, B) : (B, A)
 
     function refine!(P, S, x)
         for y in S
-            in_pivot_set[y] = true
+            in_splitter[y] = true
         end
         i, between = 0, false
         while (i += 1) <= length(P)
@@ -54,12 +83,12 @@ function symgraph_factorizing_permutation(
             # membership flags instead costs O(|X|), and O(Σ|X|) over the
             # partition. element order within each half is the order within X,
             # exactly as intersect and setdiff give it
-            k = count(y -> in_pivot_set[y], X)
+            k = count(y -> in_splitter[y], X)
             (k == 0 || k == length(X)) && continue
             Xₐ, Xₙ = Vector{Int}(undef, k), Vector{Int}(undef, length(X) - k)
             a = b = 0
             for y in X
-                in_pivot_set[y] ? (Xₐ[a += 1] = y) : (Xₙ[b += 1] = y)
+                in_splitter[y] ? (Xₐ[a += 1] = y) : (Xₙ[b += 1] = y)
             end
             P[i] = Xₙ
             insert!(P, i + between, Xₐ)
@@ -67,7 +96,7 @@ function symgraph_factorizing_permutation(
             i += 1
         end
         for y in S
-            in_pivot_set[y] = false
+            in_splitter[y] = false
         end
     end
 
@@ -100,10 +129,11 @@ function symgraph_factorizing_permutation(
                     in_pivot_part[y] = true
                 end
                 for x in E
-                    # N_adj(x) \ E, without materializing the neighbourhood
-                    # first and then hashing E to subtract it
-                    S = [y for y in V
-                         if y != x && G[x,y] != 0 && !in_pivot_part[y]]
+                    # the neighbourhood of x minus the part it came from, built
+                    # in one pass: O(deg x) given a representation that can list
+                    # a vertex's neighbours, O(n) given one that cannot
+                    S = [y for y in neighbors(G, x)
+                         if in_V[y] && !in_pivot_part[y]]
                     refine!(P, S, x)
                 end
                 for y in E
@@ -119,7 +149,17 @@ function symgraph_factorizing_permutation(
             for (i, X) in enumerate(P)
                 length(X) > 1 || continue
                 x = get(first_pivot, X, first(X))
-                A, N = N_adj(x, X), N_non(x, X)
+                # split X into the neighbours and non-neighbours of x, keeping
+                # the order X had, in O(|X| + deg x) rather than by testing
+                # every element of X against the graph
+                for y in neighbors(G, x)
+                    in_splitter[y] = true
+                end
+                A = [y for y in X if y != x && in_splitter[y]]
+                N = [y for y in X if y != x && !in_splitter[y]]
+                for y in neighbors(G, x)
+                    in_splitter[y] = false
+                end
                 splice!(P, i, filter!(!isempty, [A, [x], N]))
                 S, L = smaller_larger(A, N)
                 center = x
