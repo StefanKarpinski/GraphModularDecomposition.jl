@@ -108,3 +108,31 @@ end
         @warn "non-modular permutation" G=first_failure[1] p=first_failure[2]
     @test failures == 0
 end
+
+# LinearAlgebra.issymmetric can report a sparse matrix symmetric when it is not
+# (JuliaSparse/SparseArrays.jl#748), and choosing the undirected algorithm for a
+# digraph on that basis returns a permutation that is not factorizing at all.
+# This is one of the matrices it gets wrong, and the exhaustive check below is
+# what turned it up: it is 2 of the 4096 digraphs on four vertices, so nothing
+# smaller than all of them was going to find it.
+@testset "symmetry is tested without trusting issymmetric" begin
+    G = [0 0 1 0
+         0 0 0 1
+         1 1 0 0
+         0 1 0 0]
+    @test G != transpose(G)
+    @test !GraphModularDecomposition.is_symmetric(sparse(G))
+    @test is_modular_permutation(G, graph_factorizing_permutation(sparse(G)))
+
+    disagreements = 0
+    pairs = [(i, j) for i = 1:4 for j = 1:4 if i != j]
+    for bits = 0:(2^length(pairs) - 1)
+        H = zeros(Int, 4, 4)
+        for (b, (i, j)) in enumerate(pairs)
+            (bits >> (b-1)) & 1 == 1 && (H[i,j] = 1)
+        end
+        repr(StrongModuleTree(H)) == repr(StrongModuleTree(sparse(H))) ||
+            (disagreements += 1)
+    end
+    @test disagreements == 0
+end

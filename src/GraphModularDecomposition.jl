@@ -445,11 +445,32 @@ function digraph_factorizing_permutation(
     return leaves(h)
 end
 
+"""
+    is_symmetric(G)
+
+Whether `G` equals its own transpose.
+
+`LinearAlgebra.issymmetric` is not to be trusted here: on a sparse matrix it can
+report symmetry that is not there, because while looking for the mirror of a
+stored entry it can read past the end of the column it is searching and find an
+entry belonging to the next one. JuliaSparse/SparseArrays.jl#748, and #636
+before it, which was fixed only for the case of an entirely empty column.
+Getting this wrong runs the undirected algorithm on a digraph and returns a
+permutation that is not a factorizing permutation at all.
+
+Comparing against a materialized transpose is correct and costs the size of the
+representation: O(n + nnz) for a sparse matrix, which is in fact quicker than
+`issymmetric`, and O(n²) for a dense one, where `issymmetric` is both correct
+and allocation-free and so is left in place.
+"""
+is_symmetric(G::AbstractMatrix) = issymmetric(G)
+is_symmetric(G::SparseMatrixCSC) = G == permutedims(G)
+
 function graph_factorizing_permutation(G::AbstractMatrix)
     a, b = extrema(G)
     0 ≤ a ≤ b ≤ 1 ||
         error("factoring multi-color two-structures not supported")
-    issymmetric(G) ?
+    is_symmetric(G) ?
         symgraph_factorizing_permutation(G) :
         digraph_factorizing_permutation(G)
 end
