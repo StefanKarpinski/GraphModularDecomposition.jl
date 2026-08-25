@@ -5,6 +5,8 @@ export StrongModuleTree, strong_modules,
     nodes, node_count, parent_node, is_cograph
 
 using ..GraphModularDecomposition
+using ..GraphModularDecomposition: neighbors
+using SparseArrays: SparseMatrixCSC
 
 ## core type definition ##
 
@@ -14,21 +16,122 @@ struct StrongModuleTree{T} <: AbstractVector{T}
     nodes::Vector{Union{T,StrongModuleTree{T}}}
 end
 
-## constructing StrongModuleTrees ##
+## finding cutters ##
 
-function StrongModuleTree(
-    G::AbstractMatrix, # the graph/digraph/2-structure as a matrix
-    p::Vector{Int} = graph_factorizing_permutation(G),
-)
-    # initialize data structures
+# A vertex w cuts the pair (u, v) when it is related differently to the two of
+# them — when (G[w,u], G[u,w]) and (G[w,v], G[v,w]) differ.
+#
+# There are two ways to find the first and last such w, and which one is right
+# depends on the representation, so there is a method per representation below.
+#
+# Scanning the permutation looks at every place before the cutter whether or not
+# anything is there, so it is Θ(n) for a pair with no cutter and Θ(n²) over the
+# whole permutation — but on a graph with edges everywhere it usually stops at
+# the first place it looks, and it reads the matrix directly.
+#
+# Merging looks only at the places holding a relation, which is Θ(deg u + deg v)
+# per pair and Θ(n + m) over the permutation — but it has to list every vertex's
+# relations first, and that build costs the size of the representation. On a
+# dense matrix the build alone is Θ(n²), against a scan that is usually Θ(1) per
+# pair, so paying it there is a bad trade by three orders of magnitude.
+#
+# Both are linear in the representation they are chosen for.
+
+transposed(G::SparseMatrixCSC) = copy(G')
+
+# For each place in the permutation, the places related to it, in increasing
+# order, with the labels in each direction. Stored as one flat array per field
+# with a start index per place.
+struct Relations
+    start :: Vector{Int}
+    place :: Vector{Int}
+    in    :: Vector{Int}
+    out   :: Vector{Int}
+end
+
+Base.getindex(r::Relations, j::Integer) = r.start[j]:r.start[j+1]-1
+
+function Relations(G::SparseMatrixCSC, p::Vector{Int}, pos::Vector{Int})
     n = length(p)
-    op = zeros(Int,n); op[1] = 1
-    cl = zeros(Int,n); cl[n] = 1
-    lc = collect(1:n-1)
-    uc = collect(2:n)
+    Gt = transposed(G)
+    # collect each place's related places, deduplicating the two directions
+    seen = falses(n)
+    lists = Vector{Vector{Int}}(undef, n)
+    for j = 1:n
+        u, places = p[j], Int[]
+        for w in Iterators.flatten((neighbors(G, u), neighbors(Gt, u)))
+            k = pos[w]
+            seen[k] && continue
+            seen[k] = true
+            push!(places, k)
+        end
+        for k in places
+            seen[k] = false
+        end
+        lists[j] = places
+    end
+    total = sum(length, lists)
+    start = zeros(Int, n + 2)
+    start[1] = 1
+    for j = 1:n
+        start[j+1] = start[j] + length(lists[j])
+    end
+    start[n+2] = start[n+1]
+    place, inlab, outlab = Vector{Int}(undef, total), Vector{Int}(undef, total),
+                           Vector{Int}(undef, total)
+    for j = 1:n
+        u, at = p[j], start[j]
+        sort!(lists[j])
+        for k in lists[j]
+            w = p[k]
+            place[at], inlab[at], outlab[at] = k, G[w,u], G[u,w]
+            at += 1
+        end
+    end
+    return Relations(start, place, inlab, outlab)
+end
 
-    # count open and close parens in fracture tree
-    # find lower and upper cutters for node pairs
+# The first place before `j` that cuts the pair at places j and j+1, or 0.
+function lower_cutter(r::Relations, j::Int)
+    a, b = r[j], r[j+1]
+    ia, ib = first(a), first(b)
+    while true
+        pa = ia <= last(a) ? r.place[ia] : typemax(Int)
+        pb = ib <= last(b) ? r.place[ib] : typemax(Int)
+        k = min(pa, pb)
+        k < j || return 0
+        if pa == k && pb == k
+            (r.in[ia] != r.in[ib] || r.out[ia] != r.out[ib]) && return k
+            ia += 1; ib += 1
+        elseif pa == k
+            return k # related to one and not the other
+        else
+            return k
+        end
+    end
+end
+
+# The last place after `j+1` that cuts the pair at places j and j+1, or 0.
+function upper_cutter(r::Relations, j::Int)
+    a, b = r[j], r[j+1]
+    ia, ib = last(a), last(b)
+    while true
+        pa = ia >= first(a) ? r.place[ia] : 0
+        pb = ib >= first(b) ? r.place[ib] : 0
+        k = max(pa, pb)
+        k > j + 1 || return 0
+        if pa == k && pb == k
+            (r.in[ia] != r.in[ib] || r.out[ia] != r.out[ib]) && return k
+            ia -= 1; ib -= 1
+        else
+            return k
+        end
+    end
+end
+
+# scanning: for a matrix that stores every pair, so that reading one is O(1)
+function find_cutters!(op, cl, lc, uc, G::AbstractMatrix, p::Vector{Int})
+    n = length(p)
     for j = 1:n-1
         for i = 1:j-1
             G[p[i],p[j]] == G[p[i],p[j+1]] &&
@@ -48,6 +151,48 @@ function StrongModuleTree(
             break
         end
     end
+end
+
+# merging: for a matrix that stores only the relations there are
+function find_cutters!(op, cl, lc, uc, G::SparseMatrixCSC, p::Vector{Int})
+    n = length(p)
+    pos = zeros(Int, n)
+    for (k, v) in enumerate(p)
+        pos[v] = k
+    end
+    relations = Relations(G, p, pos)
+    for j = 1:n-1
+        i = lower_cutter(relations, j)
+        if i != 0
+            op[i] += 1
+            cl[j] += 1
+            lc[j] = i
+        end
+        i = upper_cutter(relations, j)
+        if i != 0
+            op[j+1] += 1
+            cl[i] += 1
+            uc[j] = i
+        end
+    end
+end
+
+## constructing StrongModuleTrees ##
+
+function StrongModuleTree(
+    G::AbstractMatrix, # the graph/digraph/2-structure as a matrix
+    p::Vector{Int} = graph_factorizing_permutation(G),
+)
+    # initialize data structures
+    n = length(p)
+    op = zeros(Int,n); op[1] = 1
+    cl = zeros(Int,n); cl[n] = 1
+    lc = collect(1:n-1)
+    uc = collect(2:n)
+
+    # count open and close parens in fracture tree
+    # find lower and upper cutters for node pairs
+    find_cutters!(op, cl, lc, uc, G, p)
 
     # remove non-module "dummy" nodes
     #

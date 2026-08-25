@@ -14,10 +14,6 @@ using SparseArrays: nonzeros, nzrange, rowvals
 include("OverlapComponents.jl")
 using .OverlapComponents
 
-include("StrongModuleTrees.jl")
-using .StrongModuleTrees
-using .StrongModuleTrees: TreeIndex, containing_node, parent_index
-
 const \ = setdiff
 
 ## iterating a vertex's neighbours ##
@@ -44,6 +40,11 @@ function neighbors(G::SparseMatrixCSC, x::Integer)
     rows, vals = rowvals(G), nonzeros(G)
     (rows[k] for k in nzrange(G, x) if rows[k] != x && !iszero(vals[k]))
 end
+
+include("StrongModuleTrees.jl")
+using .StrongModuleTrees
+using .StrongModuleTrees: TreeIndex, containing_node, parent_index
+
 
 function symgraph_factorizing_permutation(
     G :: AbstractMatrix,
