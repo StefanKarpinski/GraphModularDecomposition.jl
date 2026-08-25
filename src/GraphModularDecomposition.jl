@@ -460,19 +460,19 @@ function digraph_factorizing_permutation(
             # child's own leaves can disagree, and then no leaf speaks for it.
             # Such a child joins no union and is set aside.
             outside = (1:n)\leaves(h)
-            signatures, groups, aside = Vector{Any}(), Vector{Any}(), []
+            # this path only ever sees 0/1 entries -- G .| G' and G .& G' above
+            # are bitwise and mean nothing otherwise -- so one number per
+            # outside vertex distinguishes all four ways a pair can be related
+            relation(x, v) = G[v,x] + 2G[x,v]
+            index = Dict{Vector{Int},Int}()
+            groups, aside = Vector{Any}[], Any[]
             for x in h.nodes
                 L = leaves(x)
                 i = first(L)
-                signature = [(G[v,i], G[i,v]) for v in outside]
-                if all(G[v,y] == G[v,i] && G[y,v] == G[i,v] for y in L, v in outside)
-                    k = findfirst(isequal(signature), signatures)
-                    if k === nothing
-                        push!(signatures, signature)
-                        push!(groups, Any[x])
-                    else
-                        push!(groups[k], x)
-                    end
+                signature = [relation(i, v) for v in outside]
+                if all(relation(y, v) == relation(i, v) for y in L, v in outside)
+                    k = get!(index, signature, length(groups) + 1)
+                    k > length(groups) ? push!(groups, Any[x]) : push!(groups[k], x)
                 else
                     push!(aside, x)
                 end
