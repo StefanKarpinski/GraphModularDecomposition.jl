@@ -41,6 +41,34 @@ function neighbors(G::SparseMatrixCSC, x::Integer)
     (rows[k] for k in nzrange(G, x) if rows[k] != x && !iszero(vals[k]))
 end
 
+"""
+    is_symmetric(G)
+
+Whether `G` equals its own transpose.
+
+`LinearAlgebra.issymmetric` is not to be trusted here: on a sparse matrix it can
+report symmetry that is not there, because while looking for the mirror of a
+stored entry it can read past the end of the column it is searching and find an
+entry belonging to the next one. JuliaSparse/SparseArrays.jl#748, and #636
+before it, which was fixed only for the case of an entirely empty column.
+Getting this wrong runs the undirected algorithm on a digraph and returns a
+permutation that is not a factorizing permutation at all.
+
+Comparing against a materialized transpose is correct and costs the size of the
+representation: O(n + nnz) for a sparse matrix and O(n²) for a dense one, where
+`issymmetric` is both correct and allocation-free and so is left in place.
+
+There is no fast path through `issymmetric` first. Its `true` is the answer that
+cannot be trusted, so it would have to be checked again anyway; on a sparse
+matrix carrying stored zeros it can throw a `BoundsError` rather than return
+either answer, so it would need catching as well as checking; and at the
+densities a sparse matrix is worth having at all it is not the quicker of the
+two — around six entries per column the comparison below runs in 0.80 to 0.96
+of its time.
+"""
+is_symmetric(G::AbstractMatrix) = issymmetric(G)
+is_symmetric(G::SparseMatrixCSC) = G == permutedims(G)
+
 include("StrongModuleTrees.jl")
 using .StrongModuleTrees
 using .StrongModuleTrees: TreeIndex, containing_node, parent_index
@@ -253,44 +281,56 @@ function symgraph_factorizing_permutation(
             p = next_part()
             p == 0 && return false
             x = first_pivot[p] != 0 ? first_pivot[p] : elems[lo[p]]
-            for y in neighbors(G, x)
-                in_splitter[y] = true
-            end
-            A, N = Int[], Int[]
-            for j = lo[p]:hi[p]
-                y = elems[j]
-                y == x && continue
-                push!(in_splitter[y] ? A : N, y)
-            end
-            for y in neighbors(G, x)
-                in_splitter[y] = false
-            end
-            # rewrite p's range as the neighbours of x, then x, then the rest,
-            # and give each of the three a part of its own
-            j = lo[p]
-            for y in A
-                elems[j], pos[y] = y, j
-                j += 1
-            end
-            elems[j], pos[x] = x, j
-            xj = j
-            j += 1
-            for y in N
-                elems[j], pos[y] = y, j
-                j += 1
-            end
+            first_pivot[p] = 0 # p is about to stop being the part it was
+            # Split p into the neighbours of x, then x, then the rest, by moving
+            # only x and its neighbours to the front of p's range. Whatever is
+            # left is already in place and becomes the third part, so this costs
+            # O(deg x) rather than O(|p|).
+            #
+            # That matters because a part whose vertices are all twins can never
+            # be refined, so this loop is what takes it apart, one vertex per
+            # call. A star's leaves are such a part, and scanning it each time
+            # made a graph with n-1 edges cost Θ(n²).
             l, h = lo[p], hi[p]
-            nparts -= 1 # p is replaced by the parts made below
-            pa = isempty(A) ? 0 : new_part!(l, l + length(A) - 1)
+            cursor = l
+            for y in neighbors(G, x)
+                (y != x && part[y] == p) || continue
+                j = pos[y]
+                u = elems[cursor]
+                elems[j], pos[u] = u, j
+                elems[cursor], pos[y] = y, cursor
+                cursor += 1
+            end
+            j = pos[x] # x sits at or after the neighbours, never among them
+            u = elems[cursor]
+            elems[j], pos[u] = u, j
+            elems[cursor], pos[x] = x, cursor
+            xj = cursor
+            na, nn = xj - l, h - xj
+            # the old number stays with the larger side, so only the smaller
+            # side's vertices are relabelled
             px = new_part!(xj, xj)
-            pn = isempty(N) ? 0 : new_part!(xj + 1, h)
-            for q in (pa, px, pn), j = (q == 0 ? (1:0) : lo[q]:hi[q])
-                part[elems[j]] = q
+            part[x] = px
+            pa = pn = 0
+            if na > 0 && nn > 0
+                if na >= nn
+                    pa = p; lo[p], hi[p] = l, xj - 1
+                    pn = new_part!(xj + 1, h)
+                    for j = xj+1:h; part[elems[j]] = pn; end
+                else
+                    pn = p; lo[p], hi[p] = xj + 1, h
+                    pa = new_part!(l, xj - 1)
+                    for j = l:xj-1; part[elems[j]] = pa; end
+                end
+            elseif na > 0
+                pa = p; lo[p], hi[p] = l, xj - 1
+            else
+                pn = p; lo[p], hi[p] = xj + 1, h
             end
             drop_pivot!(p)
             mod_pos[p] != 0 && (mod_pos[p] = 0; nmodules -= 1)
             center = x
-            small, large = length(A) <= length(N) ? (pa, pn) : (pn, pa)
+            small, large = na <= nn ? (pa, pn) : (pn, pa)
             small != 0 && push_pivot!(small)
             large != 0 && push_module!(large)
         else
@@ -483,27 +523,6 @@ function digraph_factorizing_permutation(
     sort_leaves!(h)
     return leaves(h)
 end
-
-"""
-    is_symmetric(G)
-
-Whether `G` equals its own transpose.
-
-`LinearAlgebra.issymmetric` is not to be trusted here: on a sparse matrix it can
-report symmetry that is not there, because while looking for the mirror of a
-stored entry it can read past the end of the column it is searching and find an
-entry belonging to the next one. JuliaSparse/SparseArrays.jl#748, and #636
-before it, which was fixed only for the case of an entirely empty column.
-Getting this wrong runs the undirected algorithm on a digraph and returns a
-permutation that is not a factorizing permutation at all.
-
-Comparing against a materialized transpose is correct and costs the size of the
-representation: O(n + nnz) for a sparse matrix, which is in fact quicker than
-`issymmetric`, and O(n²) for a dense one, where `issymmetric` is both correct
-and allocation-free and so is left in place.
-"""
-is_symmetric(G::AbstractMatrix) = issymmetric(G)
-is_symmetric(G::SparseMatrixCSC) = G == permutedims(G)
 
 function graph_factorizing_permutation(G::AbstractMatrix)
     a, b = extrema(G)
