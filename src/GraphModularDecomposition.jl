@@ -462,6 +462,7 @@ function digraph_factorizing_permutation(
     t = StrongModuleTree(Gd, pd)
     p = intersect_permutation(1:n, s, t)
     h = StrongModuleTree(H, p)
+    is_module = module_of(G, p, h) # nodes of h that are modules of G, or nothing
     function sort_leaves!(h)
         for x in h.nodes
             x isa StrongModuleTree && sort_leaves!(x)
@@ -507,10 +508,17 @@ function digraph_factorizing_permutation(
             index = Dict{Vector{Int},Int}()
             groups, aside = Vector{Any}[], Any[]
             for x in h.nodes
-                L = leaves(x)
-                i = first(L)
-                signature = [relation(i, v) for v in outside]
-                if all(relation(y, v) == relation(i, v) for y in L, v in outside)
+                i = first_leaf(x)
+                # whether this child is a module of G, and so has a relation to
+                # the outside that one of its leaves can speak for. Asking that
+                # by checking every leaf against every outside vertex is what
+                # this used to do, and it cost more than the rest of the
+                # decomposition together on a deep tree.
+                if is_module === nothing ?
+                       all(relation(y, v) == relation(i, v)
+                           for y in leaves(x), v in outside) :
+                       (!(x isa StrongModuleTree) || is_module[x])
+                    signature = [relation(i, v) for v in outside]
                     k = get!(index, signature, length(groups) + 1)
                     k > length(groups) ? push!(groups, Any[x]) : push!(groups[k], x)
                 else
