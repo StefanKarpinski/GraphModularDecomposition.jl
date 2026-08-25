@@ -433,13 +433,51 @@ function digraph_factorizing_permutation(
             o = Dict(x => i for (i, x) in enumerate(q))
             sort!(h.nodes, by=x->o[first_leaf(x)])
         else # 0/2-complete node
-            d = Dict()
-            c = (1:n)\leaves(h)
+            # No edges run between this node's children, or all of them are
+            # reciprocal, so which unions of children are modules of G is
+            # decided entirely outside the node: a union is a module exactly
+            # when its children relate identically to every outside vertex, in
+            # both directions. Group them by that, so each such union comes out
+            # contiguous.
+            #
+            # This is the relation R_X of McConnell & de Montgolfier 2005,
+            # "Linear-time modular decomposition of directed graphs", lemma 10
+            # and step 4 of their algorithm 3: S ~ S' when N⁺(S) and N⁺(S')
+            # agree outside the node and N⁻(S) and N⁻(S') do too, taken over
+            # the children that are modules of G. Their labels for H are not
+            # these -- theirs number a reciprocal pair 1 and a one-way pair 2,
+            # H = Gs + Gd numbers them the other way round -- so their
+            # "0-complete and 1-complete" is this branch and their "2-complete"
+            # is the tournament branch above, which takes arbitrary
+            # representatives on the strength of their lemma 11. Representatives
+            # are sound there and not here, which is what went wrong.
+            #
+            # Both halves of this matter. Looking only at G[v,x], as this used
+            # to, misses unions that are separated by the other direction. And
+            # taking the relation from one leaf of a child misrepresents the
+            # child: being a module of H does not make it a module of G -- H
+            # records only whether a pair is joined, not which way -- so a
+            # child's own leaves can disagree, and then no leaf speaks for it.
+            # Such a child joins no union and is set aside.
+            outside = (1:n)\leaves(h)
+            # this path only ever sees 0/1 entries -- G .| G' and G .& G' above
+            # are bitwise and mean nothing otherwise -- so one number per
+            # outside vertex distinguishes all four ways a pair can be related
+            relation(x, v) = G[v,x] + 2G[x,v]
+            index = Dict{Vector{Int},Int}()
+            groups, aside = Vector{Any}[], Any[]
             for x in h.nodes
-                i = first_leaf(x)
-                push!(get!(d, G[c,i], []), x)
+                L = leaves(x)
+                i = first(L)
+                signature = [relation(i, v) for v in outside]
+                if all(relation(y, v) == relation(i, v) for y in L, v in outside)
+                    k = get!(index, signature, length(groups) + 1)
+                    k > length(groups) ? push!(groups, Any[x]) : push!(groups[k], x)
+                else
+                    push!(aside, x)
+                end
             end
-            h.nodes .= [x for v in values(d) for x in v]
+            h.nodes .= vcat([x for g in groups for x in g], aside)
         end
     end
     sort_leaves!(h)

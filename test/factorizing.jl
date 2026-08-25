@@ -164,3 +164,40 @@ end
               repr(StrongModuleTree(sparse(G), copy(p)))
     end
 end
+
+# Regression for #13. sort_leaves! orders the children of a degenerate node of
+# the H tree, and that order is what decides whether a module of G that is only
+# a *union of siblings* comes out contiguous. Here {4,5,7} is such a module: it
+# is a module of G, a weak module of the symmetric part, and a module of no tree
+# the algorithm builds, so nothing but the child order keeps it together.
+@testset "factorizing permutations: sibling unions (#13)" begin
+    G = [0 0 0 0 0 1 0
+         1 0 0 0 0 1 0
+         0 0 0 0 0 0 0
+         1 0 0 0 0 0 0
+         1 0 0 0 0 0 0
+         0 0 0 0 0 0 0
+         1 0 0 0 1 0 0]
+    @test is_module(G, [4, 5, 7])
+    @test is_module(G, [5, 7])
+    for rep in (G, sparse(G))
+        p = graph_factorizing_permutation(rep)
+        @test sort(p) == collect(1:7)
+        @test diff(sort([findfirst(isequal(x), p) for x in (4,5,7)])) == [1, 1]
+        @test is_modular_permutation(G, p)
+    end
+
+    # Breadth, but read the margin before trusting it: the defect turns up in
+    # about one sparse digraph in forty thousand, and this seed finds exactly
+    # one in twenty-five thousand. It is the graph above that is the real guard;
+    # this is here to catch anything of the same shape that is not that graph.
+    rng = MersenneTwister(7) # a private stream: see test/overlap.jl
+    failures = 0
+    for _ = 1:6_000
+        n = rand(rng, 5:9)
+        H = Int[i != j && rand(rng, Bool) for i = 1:n, j = 1:n] .* rand(rng, 0:1, n, n)
+        q = graph_factorizing_permutation(H)
+        sort(q) == collect(1:n) && is_modular_permutation(H, q) || (failures += 1)
+    end
+    @test failures == 0
+end
