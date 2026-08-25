@@ -5,8 +5,9 @@ export StrongModuleTree, strong_modules,
     nodes, node_count, parent_node, is_cograph
 
 using ..GraphModularDecomposition
-using ..GraphModularDecomposition: neighbors
-using SparseArrays: SparseMatrixCSC
+using ..GraphModularDecomposition: neighbors, is_symmetric
+using SparseArrays: SparseMatrixCSC, nonzeros, nzrange, rowvals
+using LinearAlgebra: checksquare
 
 ## core type definition ##
 
@@ -177,6 +178,96 @@ function find_cutters!(op, cl, lc, uc, G::SparseMatrixCSC, p::Vector{Int})
     end
 end
 
+## deciding a node's kind by counting crossings ##
+
+"""
+    crossing_kinds(G, v, root)
+
+For each node of the nested structure `root`, whether it is `:complete` and with
+which label, or `:prime` — or `nothing` when this cannot be answered this way.
+
+`classify_nodes` decides a node by comparing each of its children against each
+of the others. That is cheap for a prime node, which stops at the first pair
+that disagrees, and quadratic for a degenerate one, which never disagrees: a
+star's root has n-1 children with no edges among them, so a graph with n-1 edges
+costs Θ(n²).
+
+When the matrix is symmetric the question is only whether every pair of children
+is related the same way, and that can be counted instead of compared. A pair of
+vertices crosses between two children at exactly one node — the lowest one
+holding both of them — so a single pass over the stored entries gives every node
+the number of crossings it has and whether they all carry one label. Against the
+number of pairs that could cross, which the children's sizes give, that decides
+the node: none crossing means complete on the label of a non-edge, all crossing
+under one label means complete on that label, and anything else is prime.
+
+Only worth it for a matrix that stores its edges: reading a dense one costs the
+Θ(n²) this is trying to avoid, and there Θ(Σk²) is no worse than the input.
+"""
+function crossing_kinds(G::SparseMatrixCSC, v::AbstractVector{<:Integer}, root::Vector)
+    n = length(v)
+    (checksquare(G) == n && sort(v) == 1:n && is_symmetric(G)) || return nothing
+
+    place = Vector{Int}(undef, n)
+    for (i, x) in enumerate(v)
+        place[x] = i
+    end
+
+    # index the nodes: where each one starts and ends among the leaves, its
+    # parent, the sum of the squares of its children's sizes, and for each leaf
+    # the node directly above it
+    ids = IdDict{Any,Int}()
+    lo, hi, parent, sumsq = Int[], Int[], Int[], Int[]
+    holder = zeros(Int, n)
+    function index!(t::Vector, above::Int, at::Int)
+        push!(lo, at); push!(hi, 0); push!(parent, above); push!(sumsq, 0)
+        i = length(lo)
+        ids[t] = i
+        for x in t
+            if x isa Vector
+                at = index!(x, i, at)
+                j = ids[x]
+                sumsq[i] += (hi[j] - lo[j] + 1)^2
+            else
+                holder[at] = i
+                sumsq[i] += 1
+                at += 1
+            end
+        end
+        hi[i] = at - 1
+        return at
+    end
+    index!(root, 0, 1)
+
+    # every stored entry crosses at the lowest node holding both its ends
+    crossings = zeros(Int, length(lo))
+    label = fill(-2, length(lo)) # -2 nothing yet, -1 more than one label
+    rows, vals = rowvals(G), nonzeros(G)
+    for column = 1:n, k in nzrange(G, column)
+        row = rows[k]
+        row < column && !iszero(vals[k]) || continue # each pair once
+        a, b = minmax(place[row], place[column])
+        i = holder[a]
+        while hi[i] < b
+            i = parent[i]
+        end
+        crossings[i] += 1
+        label[i] = label[i] == -2 || label[i] == vals[k] ? vals[k] : -1
+    end
+
+    kinds = IdDict{Any,Tuple{Symbol,Tuple}}()
+    for (t, i) in ids
+        possible = ((hi[i] - lo[i] + 1)^2 - sumsq[i]) ÷ 2
+        kinds[t] =
+            crossings[i] == 0 ? (:complete, (0, 0)) :
+            label[i] != -1 && crossings[i] == possible ?
+                (:complete, (label[i], label[i])) : (:prime, ())
+    end
+    return kinds
+end
+
+crossing_kinds(G::AbstractMatrix, v::AbstractVector, root::Vector) = nothing
+
 ## constructing StrongModuleTrees ##
 
 function StrongModuleTree(
@@ -303,6 +394,11 @@ function StrongModuleTree(
             x = t[i]
             nodes[i], leaf[i] = x isa Vector ? classify_nodes(x) : (x, x)
         end
+        # counted rather than compared, where counting applies
+        if kinds !== nothing
+            kind, edge = kinds[t]
+            return StrongModuleTree{T}(kind, edge, nodes), leaf[1]
+        end
         counts = zeros(Int, n)
         x, y = leaf[1], leaf[2]
         edge = (G[y,x], G[x,y])
@@ -351,6 +447,7 @@ function StrongModuleTree(
             pop!(s)
         end
     end
+    kinds = crossing_kinds(G, v, s[end])
     t, _ = classify_nodes(s[end])
     delete_weak_modules!(t)
     return t
