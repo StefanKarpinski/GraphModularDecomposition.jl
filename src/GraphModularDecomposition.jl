@@ -55,9 +55,16 @@ Getting this wrong runs the undirected algorithm on a digraph and returns a
 permutation that is not a factorizing permutation at all.
 
 Comparing against a materialized transpose is correct and costs the size of the
-representation: O(n + nnz) for a sparse matrix, which is in fact quicker than
-`issymmetric`, and O(n²) for a dense one, where `issymmetric` is both correct
-and allocation-free and so is left in place.
+representation: O(n + nnz) for a sparse matrix and O(n²) for a dense one, where
+`issymmetric` is both correct and allocation-free and so is left in place.
+
+There is no fast path through `issymmetric` first. Its `true` is the answer that
+cannot be trusted, so it would have to be checked again anyway; on a sparse
+matrix carrying stored zeros it can throw a `BoundsError` rather than return
+either answer, so it would need catching as well as checking; and at the
+densities a sparse matrix is worth having at all it is not the quicker of the
+two — around six entries per column the comparison below runs in 0.80 to 0.96
+of its time.
 """
 is_symmetric(G::AbstractMatrix) = issymmetric(G)
 is_symmetric(G::SparseMatrixCSC) = G == permutedims(G)
