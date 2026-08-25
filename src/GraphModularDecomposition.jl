@@ -433,13 +433,39 @@ function digraph_factorizing_permutation(
             o = Dict(x => i for (i, x) in enumerate(q))
             sort!(h.nodes, by=x->o[first_leaf(x)])
         else # 0/2-complete node
-            d = Dict()
-            c = (1:n)\leaves(h)
+            # No edges run between this node's children, or all of them are
+            # reciprocal, so which unions of children are modules of G is
+            # decided entirely outside the node: a union is a module exactly
+            # when its children relate identically to every outside vertex, in
+            # both directions. Group them by that, so each such union comes out
+            # contiguous.
+            #
+            # Both halves of this matter. Looking only at G[v,x], as this used
+            # to, misses unions that are separated by the other direction. And
+            # taking the relation from one leaf of a child misrepresents the
+            # child: being a module of H does not make it a module of G -- H
+            # records only whether a pair is joined, not which way -- so a
+            # child's own leaves can disagree, and then no leaf speaks for it.
+            # Such a child joins no union and is set aside.
+            outside = (1:n)\leaves(h)
+            signatures, groups, aside = Vector{Any}(), Vector{Any}(), []
             for x in h.nodes
-                i = first_leaf(x)
-                push!(get!(d, G[c,i], []), x)
+                L = leaves(x)
+                i = first(L)
+                signature = [(G[v,i], G[i,v]) for v in outside]
+                if all(G[v,y] == G[v,i] && G[y,v] == G[i,v] for y in L, v in outside)
+                    k = findfirst(isequal(signature), signatures)
+                    if k === nothing
+                        push!(signatures, signature)
+                        push!(groups, Any[x])
+                    else
+                        push!(groups[k], x)
+                    end
+                else
+                    push!(aside, x)
+                end
             end
-            h.nodes .= [x for v in values(d) for x in v]
+            h.nodes .= vcat([x for g in groups for x in g], aside)
         end
     end
     sort_leaves!(h)
