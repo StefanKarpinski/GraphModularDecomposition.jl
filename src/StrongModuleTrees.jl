@@ -1,6 +1,6 @@
 module StrongModuleTrees
 
-export StrongModuleTree, strong_modules,
+export StrongModuleTree, strong_modules, module_of,
     leaves, leaf_count, first_leaf, last_leaf, rand_leaf,
     nodes, node_count, parent_node, is_cograph
 
@@ -268,6 +268,57 @@ end
 
 crossing_kinds(G::AbstractMatrix, v::AbstractVector, root::Vector) = nothing
 
+"""
+    module_of(G, p, h)
+
+For each node of `h`, whether its leaves are a module of `G` — or `nothing` when
+that cannot be answered this way.
+
+`h` is the tree of a coarser structure than `G`: `digraph_factorizing_permutation`
+builds it over `Gs + Gd`, which records whether a pair is joined but not which
+way round, so a node of `h` can be a module there and not in `G`. Deciding that
+by comparing every leaf of a node against every vertex outside it costs
+O(|node| · |outside|), which on a deep tree is worse than everything else in the
+pipeline put together.
+
+McConnell & de Montgolfier 2005, lemma 12: a node is a module of `G` exactly
+when no cutter, taken in `G`, of a consecutive pair inside it lies outside it.
+The cutters of consecutive pairs come from the same merge used to build the tree,
+and fold up the tree in one pass, so this is O(1) a node afterwards.
+"""
+function module_of(G::SparseMatrixCSC, p::Vector{Int}, h::StrongModuleTree)
+    n = length(p)
+    checksquare(G) == n && sort(p) == 1:n || return nothing
+    pos = zeros(Int, n)
+    for (k, v) in enumerate(p)
+        pos[v] = k
+    end
+    relations = Relations(G, p, pos)
+    locut, hicut = fill(typemax(Int), n), zeros(Int, n)
+    for j = 1:n-1
+        i = lower_cutter(relations, j); i != 0 && (locut[j] = i)
+        i = upper_cutter(relations, j); i != 0 && (hicut[j] = i)
+    end
+    answer = IdDict{Any,Bool}()
+    # returns where the node ends, and the extreme cutters of the pairs inside it
+    function fold(x, at::Int)
+        x isa StrongModuleTree || return at + 1, typemax(Int), 0
+        first = at
+        low, high = typemax(Int), 0
+        for (i, c) in enumerate(x.nodes)
+            i > 1 && (low = min(low, locut[at-1]); high = max(high, hicut[at-1]))
+            at, l, h = fold(c, at)
+            low, high = min(low, l), max(high, h)
+        end
+        answer[x] = low >= first && high <= at - 1
+        return at, low, high
+    end
+    fold(h, 1)
+    return answer
+end
+
+module_of(G::AbstractMatrix, p::Vector{Int}, h::StrongModuleTree) = nothing
+
 ## constructing StrongModuleTrees ##
 
 function StrongModuleTree(
@@ -504,13 +555,21 @@ rand_leaf(t::StrongModuleTree) = rand_leaf(rand(t.nodes))
 rand_leaf(v::Vector) = rand_leaf(last(v))
 rand_leaf(x::Any) = x
 
-function leaves(t::StrongModuleTree{T}) where T
-    L = T[]
+# Collected into one buffer rather than by concatenating each child's leaves
+# into the parent's. Concatenating rebuilds every subtree once per level above
+# it, so a single call costs O(size · depth) and asking every node of a deep
+# tree for its leaves -- which is what strong_modules does -- costs far more
+# than the leaves are worth. Theorem 8 of McConnell & de Montgolfier 2005 bounds
+# the leaves of all the strong modules together by 2m + 3n, so gathering them
+# should cost the size of the graph and no more.
+function leaves!(L::Vector, t::StrongModuleTree)
     for x in t.nodes
-        append!(L, leaves(x))
+        x isa StrongModuleTree ? leaves!(L, x) : push!(L, x)
     end
     return L
 end
+
+leaves(t::StrongModuleTree{T}) where {T} = leaves!(T[], t)
 leaves(x::Any) = [x]
 
 function nodes!(v::Vector{StrongModuleTree{T}}, t::StrongModuleTree{T}) where T
