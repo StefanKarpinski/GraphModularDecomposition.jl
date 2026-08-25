@@ -440,6 +440,18 @@ function digraph_factorizing_permutation(
             # both directions. Group them by that, so each such union comes out
             # contiguous.
             #
+            # This is the relation R_X of McConnell & de Montgolfier 2005,
+            # "Linear-time modular decomposition of directed graphs", lemma 10
+            # and step 4 of their algorithm 3: S ~ S' when N⁺(S) and N⁺(S')
+            # agree outside the node and N⁻(S) and N⁻(S') do too, taken over
+            # the children that are modules of G. Their labels for H are not
+            # these -- theirs number a reciprocal pair 1 and a one-way pair 2,
+            # H = Gs + Gd numbers them the other way round -- so their
+            # "0-complete and 1-complete" is this branch and their "2-complete"
+            # is the tournament branch above, which takes arbitrary
+            # representatives on the strength of their lemma 11. Representatives
+            # are sound there and not here, which is what went wrong.
+            #
             # Both halves of this matter. Looking only at G[v,x], as this used
             # to, misses unions that are separated by the other direction. And
             # taking the relation from one leaf of a child misrepresents the
